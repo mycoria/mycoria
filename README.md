@@ -35,6 +35,10 @@ Windows will follow soon.
 
 We are also looking into supporting smaller devices in order to bring this to the IoT world.
 
+## Packaging and Deployment
+
+See [./packaging](./packaging).
+
 ## Building
 
 0. Install Go

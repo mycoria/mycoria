@@ -1,0 +1,16 @@
+[Unit]
+Description=Mycoria
+Documentation=https://mycoria.org
+Documentation=https://github.com/mycoria/mycoria
+Before=nss-lookup.target network.target shutdown.target
+After=systemd-networkd.service
+Wants=nss-lookup.target
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=10
+ExecStart=/opt/mycoria/mycoria run --config /opt/mycoria/config.yaml
+
+[Install]
+WantedBy=multi-user.target
