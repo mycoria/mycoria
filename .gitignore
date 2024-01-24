@@ -1,0 +1,5 @@
+# Binaries
+cmd/mycoria/mycoria*
+
+# Test Data
+testdata
