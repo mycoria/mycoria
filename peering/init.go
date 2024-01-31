@@ -158,6 +158,11 @@ func (state *peeringRequestState) handlePeeringRequest(in frame.Frame) (frame.Fr
 		return nil, fmt.Errorf("wrong step for receiving peering request: %d", state.step)
 	}
 
+	// Check if we are connecting to self.
+	if in.SrcIP() == state.instance.Identity().IP {
+		return nil, fmt.Errorf("received peering request from myself")
+	}
+
 	// Unmarshal request.
 	r := new(peeringRequest)
 	err := cbor.Unmarshal(in.MessageData(), r)

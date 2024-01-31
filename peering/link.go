@@ -224,8 +224,8 @@ func (link *LinkBase) reader(w *mgr.WorkerCtx) error {
 	defer link.Close(func() {
 		w.Info(
 			"closing link (by reader)",
-			"peer", link.peer,
-			"remote", link.RemoteAddr(),
+			"router", link.peer,
+			"address", link.RemoteAddr(),
 		)
 	})
 
@@ -252,8 +252,8 @@ func (link *LinkBase) reader(w *mgr.WorkerCtx) error {
 				link.Close(func() {
 					w.Info(
 						"closing link (by remote)",
-						"peer", link.peer,
-						"remote", link.RemoteAddr(),
+						"router", link.peer,
+						"address", link.RemoteAddr(),
 					)
 				})
 				return nil
@@ -262,8 +262,8 @@ func (link *LinkBase) reader(w *mgr.WorkerCtx) error {
 			link.Close(func() {
 				w.Warn(
 					"read i/o error, closing link",
-					"peer", link.peer,
-					"remote", link.RemoteAddr(),
+					"router", link.peer,
+					"address", link.RemoteAddr(),
 					"err", err,
 				)
 			})
@@ -276,8 +276,8 @@ func (link *LinkBase) reader(w *mgr.WorkerCtx) error {
 			link.Close(func() {
 				w.Warn(
 					"closing link after 100 consecutive read errors",
-					"peer", link.peer,
-					"remote", link.RemoteAddr(),
+					"router", link.peer,
+					"address", link.RemoteAddr(),
 					"err", err,
 				)
 			})
@@ -286,8 +286,8 @@ func (link *LinkBase) reader(w *mgr.WorkerCtx) error {
 
 		w.Debug(
 			"failed to read frame (non-fatal)",
-			"peer", link.peer,
-			"remote", link.RemoteAddr(),
+			"router", link.peer,
+			"address", link.RemoteAddr(),
 			"err", err,
 		)
 	}
@@ -297,8 +297,8 @@ func (link *LinkBase) writer(w *mgr.WorkerCtx) error {
 	defer link.Close(func() {
 		w.Info(
 			"closing link (by writer)",
-			"peer", link.peer,
-			"remote", link.RemoteAddr(),
+			"router", link.peer,
+			"address", link.RemoteAddr(),
 		)
 	})
 
@@ -334,8 +334,8 @@ func (link *LinkBase) writer(w *mgr.WorkerCtx) error {
 			link.Close(func() {
 				w.Warn(
 					"write i/o error, closing link",
-					"peer", link.peer,
-					"remote", link.RemoteAddr(),
+					"router", link.peer,
+					"address", link.RemoteAddr(),
 					"err", err,
 				)
 			})
@@ -348,8 +348,8 @@ func (link *LinkBase) writer(w *mgr.WorkerCtx) error {
 			link.Close(func() {
 				w.Warn(
 					"closing link after 100 consecutive write errors",
-					"peer", link.peer,
-					"remote", link.RemoteAddr(),
+					"router", link.peer,
+					"address", link.RemoteAddr(),
 					"err", err,
 				)
 			})
@@ -358,8 +358,8 @@ func (link *LinkBase) writer(w *mgr.WorkerCtx) error {
 
 		w.Debug(
 			"failed to write frame (non-fatal)",
-			"peer", link.peer,
-			"remote", link.RemoteAddr(),
+			"router", link.peer,
+			"address", link.RemoteAddr(),
 			"err", err,
 		)
 	}
@@ -516,11 +516,11 @@ func (link *LinkBase) setupWorker(w *mgr.WorkerCtx) error {
 
 	w.Info(
 		"new link",
-		"peer", link.peer,
+		"router", link.peer,
+		"address", link.RemoteAddr(),
 		"label", link.SwitchLabel(),
-		"remote", link.RemoteAddr(),
-		"outgoing", link.outgoing,
 		"peeringURL", link.peeringURL,
+		"outgoing", link.outgoing,
 	)
 	link.startWorkers()
 	return nil
@@ -545,11 +545,11 @@ func (link *LinkBase) handleSetup(mgr *mgr.Manager) (*LinkBase, error) {
 
 	mgr.Info(
 		"new link",
-		"peer", link.peer,
+		"router", link.peer,
+		"address", link.RemoteAddr(),
 		"label", link.SwitchLabel(),
-		"remote", link.RemoteAddr(),
-		"outgoing", link.outgoing,
 		"peeringURL", link.peeringURL,
+		"outgoing", link.outgoing,
 	)
 	link.startWorkers()
 	return link, nil
