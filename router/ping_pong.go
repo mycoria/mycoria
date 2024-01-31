@@ -52,6 +52,13 @@ func (h *PingPongHandler) setActive(pingID uint64, pongState *pingPongState) {
 	h.active[pingID] = pongState
 }
 
+func (h *PingPongHandler) getActive(pingID uint64) *pingPongState {
+	h.activeLock.Lock()
+	defer h.activeLock.Unlock()
+
+	return h.active[pingID]
+}
+
 func (h *PingPongHandler) pluckActive(pingID uint64) *pingPongState {
 	h.activeLock.Lock()
 	defer h.activeLock.Unlock()
@@ -86,32 +93,42 @@ type pingPongMsg struct {
 }
 
 // Send sends a pong message to the given destination.
-func (h *PingPongHandler) Send(dstIP netip.Addr) (notify <-chan struct{}, err error) {
+func (h *PingPongHandler) Send(dstIP netip.Addr, retryPingID uint64) (notify <-chan struct{}, pingID uint64, err error) {
+	pingID = retryPingID
+
 	// Create message and marshal it.
 	msg := pingPongMsg{
 		Msg: "ping",
 	}
 	data, err := cbor.Marshal(&msg)
 	if err != nil {
-		return nil, fmt.Errorf("marshal: %w", err)
+		return nil, 0, fmt.Errorf("marshal: %w", err)
 	}
 
-	// Create state.
-	pingState := &pingPongState{
-		started: time.Now(),
-		notify:  make(chan struct{}),
+	// Get or create state.
+	var pingState *pingPongState
+	if pingID != 0 {
+		pingState = h.getActive(pingID)
+	}
+	if pingState == nil {
+		pingState = &pingPongState{
+			started: time.Now(),
+			notify:  make(chan struct{}),
+		}
 	}
 
-	// Send new ping.
-	pingID := newPingID()
+	// Send ping.
+	if pingID == 0 {
+		pingID = newPingID()
+	}
 	err = h.r.sendPingMsg(dstIP, pingID, pingPongPingType, data, false, false)
 	if err != nil {
-		return nil, fmt.Errorf("send ping: %w", err)
+		return nil, 0, fmt.Errorf("send ping: %w", err)
 	}
 
 	// Ping is sent, save to state.
 	h.setActive(pingID, pingState)
-	return pingState.notify, nil
+	return pingState.notify, pingID, nil
 }
 
 // Handle handles incoming ping frames.
