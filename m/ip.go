@@ -31,6 +31,19 @@ type AddrDistance struct {
 	lo uint64
 }
 
+// ZeroAddrDistance returns an address distance of zero.
+func ZeroAddrDistance() AddrDistance {
+	return AddrDistance{}
+}
+
+// MaxAddrDistance return the maximum address distance.
+func MaxAddrDistance() AddrDistance {
+	return AddrDistance{
+		hi: 0xFFFFFFFF_FFFFFFFF,
+		lo: 0xFFFFFFFF_FFFFFFFF,
+	}
+}
+
 // IPDistance returns the IP distance of the given addresses.
 func IPDistance(a, b netip.Addr) AddrDistance {
 	aBytes := a.As16()

@@ -41,6 +41,17 @@ func (s *MemStorage) Load(ip netip.Addr) *StoredInfo {
 	return info
 }
 
+// Query queries the storage.
+func (s *MemStorage) Query(q *StorageQuery) error {
+	s.entriesLock.RLock()
+	defer s.entriesLock.RUnlock()
+
+	for _, info := range s.entries {
+		q.Add(info)
+	}
+	return nil
+}
+
 // Save saves an entry to the storage.
 func (s *MemStorage) Save(info *StoredInfo) error {
 	s.entriesLock.Lock()

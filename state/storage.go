@@ -20,6 +20,7 @@ type StoredInfo struct {
 // Storage is an interface to a router info storage.
 type Storage interface {
 	Load(netip.Addr) *StoredInfo
+	Query(*StorageQuery) error
 	Save(*StoredInfo) error
 	Size() int
 	Prune(keep int)

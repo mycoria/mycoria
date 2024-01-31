@@ -92,10 +92,37 @@ func (state *State) AddRouter(address *m.PublicAddress) error {
 	if state.mgr != nil {
 		state.mgr.Info(
 			"new router",
-			"ID", address.IP,
+			"router", address.IP,
 		)
 	}
 	return nil
+}
+
+// QueryRouters query the router storage.
+func (state *State) QueryRouters(q *StorageQuery) error {
+	return state.storage.Query(q)
+}
+
+// QueryNearestRouters queries the nearest routers to the given IP.
+func (state *State) QueryNearestRouters(ip netip.Addr, max int) ([]*StoredInfo, error) {
+	q := NewQuery(
+		func(a *StoredInfo) bool {
+			return a.PublicInfo != nil &&
+				len(a.PublicInfo.IANA) > 0 &&
+				len(a.PublicInfo.Listeners) > 0
+		},
+		func(a, b *StoredInfo) int {
+			aDist := m.IPDistance(ip, a.Address.IP)
+			bDist := m.IPDistance(ip, b.Address.IP)
+			return aDist.Compare(bDist)
+		},
+		max,
+	)
+	if err := state.storage.Query(q); err != nil {
+		return nil, err
+	}
+
+	return q.Result(), nil
 }
 
 // AddPublicRouterInfo adds the public router info.
@@ -117,7 +144,7 @@ func (state *State) AddPublicRouterInfo(id netip.Addr, info *m.RouterInfo) error
 	if state.mgr != nil {
 		state.mgr.Info(
 			"router info updated",
-			"ID", id,
+			"router", id,
 		)
 	}
 	return nil
