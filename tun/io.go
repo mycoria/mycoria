@@ -55,7 +55,7 @@ func (d *Device) tunWriter(w *mgr.WorkerCtx) error {
 	for {
 		select {
 		case packetData := <-d.SendRaw:
-			dataWritten, err := d.Write([][]byte{packetData}, 0)
+			dataWritten, err := d.Write([][]byte{packetData}, d.sendRawOffset)
 			b.ReturnPooledSlice(packetData)
 			if err != nil {
 				w.Error("failed to write packet", "err", err)

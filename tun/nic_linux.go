@@ -18,7 +18,7 @@ func (d *Device) netLink() (netlink.Link, error) {
 	// Otherwise, get link by name and save the index.
 	nl, err = netlink.LinkByName(d.linkName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get link %q by name: %w", d.linkName, err)
+		return nil, fmt.Errorf("get link %q by name: %w", d.linkName, err)
 	}
 	d.linkIndex = nl.Attrs().Index
 
@@ -36,17 +36,17 @@ func (d *Device) InitInterface(prefix netip.Prefix) error {
 		IPNet: netipx.PrefixIPNet(prefix),
 	})
 	if err != nil {
-		return fmt.Errorf("failed to set primary address: %w", err)
+		return fmt.Errorf("set primary address: %w", err)
 	}
 
 	// Set interface flags.
 	err = netlink.LinkSetARPOff(nl)
 	if err != nil {
-		return fmt.Errorf("failed to disable ARP: %w", err)
+		return fmt.Errorf("disable ARP: %w", err)
 	}
 	err = netlink.LinkSetAllmulticastOff(nl)
 	if err != nil {
-		return fmt.Errorf("failed to disable multicast: %w", err)
+		return fmt.Errorf("disable multicast: %w", err)
 	}
 
 	return nil
@@ -62,7 +62,7 @@ func (d *Device) StartInterface() error {
 	// Take the interface online.
 	err = netlink.LinkSetUp(nl)
 	if err != nil {
-		return fmt.Errorf("failed to set link to up: %w", err)
+		return fmt.Errorf("set link to up: %w", err)
 	}
 
 	return nil

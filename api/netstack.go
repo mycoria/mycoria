@@ -182,7 +182,7 @@ func (api *API) handleResponsePackets(w *mgr.WorkerCtx) error {
 		// *tun.Device.Write() wants a 10 byte offset for packet data.
 		// Probably because it wants to use some special network stack features,
 		// where it needs to some space in front of the packet.
-		offset := 10
+		offset := api.tunDevice.SendRawOffset()
 
 		// Copy all parts of the packet to one slice.
 		pktParts := pktBuf.AsSlices()

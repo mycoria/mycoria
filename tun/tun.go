@@ -30,6 +30,8 @@ type Device struct {
 	SendRaw   chan []byte
 	SendFrame chan frame.Frame
 
+	sendRawOffset int
+
 	instance instance
 }
 
@@ -69,6 +71,7 @@ func Create(instance instance) (*Device, error) {
 		RecvRaw:        make(chan []byte, 1000),
 		SendRaw:        make(chan []byte, 1000),
 		SendFrame:      make(chan frame.Frame, 1000),
+		sendRawOffset:  10,
 		instance:       instance,
 	}
 
@@ -131,6 +134,25 @@ func (d *Device) Close() error {
 // lifetime of a Device.
 func (d *Device) BatchSize() int {
 	return d.tun.BatchSize()
+}
+
+// SendRawOffset returns the required offset of packets submitted via SendRaw.
+func (d *Device) SendRawOffset() int {
+	return d.sendRawOffset
+}
+
+// AddSendRawOffset returns the given data with the required offset of packets
+// submitted via SendRaw.
+func (d *Device) AddSendRawOffset(data []byte) (withOffset []byte, copied bool) {
+	// Don't do anything if there is no required offset.
+	if d.sendRawOffset == 0 {
+		return data, false
+	}
+
+	// Create new slice with offset and copy data.
+	withOffset = make([]byte, len(data)+d.sendRawOffset)
+	copy(withOffset[d.sendRawOffset:], data)
+	return withOffset, true
 }
 
 func (d *Device) handleTunEvents(w *mgr.WorkerCtx) error {

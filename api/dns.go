@@ -21,6 +21,15 @@ func (api *API) netstackDNSServer(w *mgr.WorkerCtx) error {
 		return err
 	}
 
+	// Advertise DNS server via RA.
+	err = api.SendRouterAdvertisement(api.instance.Identity().IP)
+	if err != nil {
+		w.Error(
+			"failed to send router advertisement to announce DNS server",
+			"err", err,
+		)
+	}
+
 	return nil
 }
 
