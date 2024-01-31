@@ -7,6 +7,7 @@ import (
 
 	"github.com/miekg/dns"
 
+	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/mgr"
 )
 
@@ -29,29 +30,58 @@ func (api *API) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	q := r.Question[0]
 	queryName := strings.ToLower(q.Name)
 
+	// Check TLD.
+	mycoName, cut := strings.CutSuffix(queryName, config.DefaultTLDBetweenDots)
+	if !cut {
+		// Ignore all queries outside of .myco
+		replyNotFound(wkr, w, r)
+		return
+	}
+
+	// Check query type.
+	switch q.Qtype {
+	case dns.TypeA, dns.TypeAAAA, dns.TypeANY:
+		// Allow A, AAAA, ANY.
+		// But we always reply with AAAA.
+	default:
+		// Ignore other types.
+		replyNotFound(wkr, w, r)
+		return
+	}
+
+	// Check query class.
+	switch q.Qclass {
+	case dns.ClassINET, dns.ClassANY:
+		// Allow INET, ANY.
+	default:
+		// Ignore other classes.
+		replyNotFound(wkr, w, r)
+		return
+	}
+
+	// Log query.
 	started := time.Now()
 	defer func() {
 		wkr.Debug(
 			"request",
 			"name", queryName,
+			"type", dns.Type(q.Qtype),
 			"time", time.Since(started),
 		)
 	}()
 
 	// Source 1: config.resolve
-	resolveToIP, ok := api.instance.Config().Resolve[queryName]
+	resolveToIP, ok := api.instance.Config().Resolve[mycoName]
 	if ok {
 		replyAAAA(wkr, w, r, resolveToIP)
 		return
 	}
 
 	// Source 2: config.friends
-	if friendName, cut := strings.CutSuffix(queryName, ".myco."); cut {
-		friend, ok := api.instance.Config().FriendsByName[friendName]
-		if ok {
-			replyAAAA(wkr, w, r, friend.IP)
-			return
-		}
+	friend, ok := api.instance.Config().FriendsByName[mycoName]
+	if ok {
+		replyAAAA(wkr, w, r, friend.IP)
+		return
 	}
 
 	replyNotFound(wkr, w, r)
@@ -65,7 +95,7 @@ func replyAAAA(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dns.Msg, ip netip.Ad
 	rr, err := dns.NewRR(q.Name + " 1 IN AAAA " + ip.String())
 	if err != nil {
 		wkr.Error(
-			"failed to create answre record",
+			"failed to create AAAA answer record",
 			"name", q.Name,
 			"answer", ip.String(),
 			"err", err,
