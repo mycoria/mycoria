@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -51,6 +52,7 @@ func generate(cmd *cobra.Command, args []string) error {
 }
 
 func makeDefaultConfig(id *m.Address) config.Store {
+	// Find state path.
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		homeDir = os.TempDir()
@@ -58,10 +60,23 @@ func makeDefaultConfig(id *m.Address) config.Store {
 	_ = os.Mkdir(filepath.Join(homeDir, ".mycoria"), 0o0750)
 	statePath := filepath.Join(homeDir, ".mycoria", "state.json")
 
+	// Get public IPs.
+	var iana []string
+	addrs, err := net.InterfaceAddrs()
+	if err == nil {
+		for _, addr := range addrs {
+			netAddr, ok := addr.(*net.IPNet)
+			if ok && netAddr.IP.IsGlobalUnicast() {
+				iana = append(iana, netAddr.IP.String())
+			}
+		}
+	}
+
 	return config.Store{
 		Router: config.Router{
 			Address:     id.Store(),
 			Listen:      []string{"tcp:47369"},
+			IANA:        iana,
 			AutoConnect: true,
 			Bootstrap:   []string{"tcp://bootstrap.mycoria.org:47369"},
 		},
