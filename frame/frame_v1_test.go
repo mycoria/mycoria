@@ -273,8 +273,14 @@ func getTestSessions(t *testing.T) (s1, s2 *state.Session) {
 		state := state.New(&instanceStub{
 			IdentityStub: a1,
 		}, nil)
-		state.AddRouter(&a1.PublicAddress)
-		state.AddRouter(&a2.PublicAddress)
+		err = state.AddRouter(&a1.PublicAddress)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = state.AddRouter(&a2.PublicAddress)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		s1 = state.GetSession(a1.IP)
 		if s1 == nil {

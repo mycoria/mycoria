@@ -185,7 +185,9 @@ func (state *peeringRequestState) handlePeeringRequest(in frame.Frame) (frame.Fr
 	// Get session and add router if necessary.
 	session := state.instance.State().GetSession(remoteAddr.IP)
 	if session == nil {
-		state.instance.State().AddRouter(remoteAddr)
+		if err := state.instance.State().AddRouter(remoteAddr); err != nil {
+			return nil, fmt.Errorf("add router to state: %w", err)
+		}
 		session = state.instance.State().GetSession(remoteAddr.IP)
 		if session == nil {
 			return nil, errors.New("session manager failure")

@@ -7,8 +7,9 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/mycoria/mycoria/m"
 	"github.com/tevino/abool"
+
+	"github.com/mycoria/mycoria/m"
 )
 
 // Frame V1:

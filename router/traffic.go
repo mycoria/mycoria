@@ -126,12 +126,12 @@ func (r *Router) cleanConnStatesWorker(w *mgr.WorkerCtx) error {
 		case <-w.Done():
 			return nil
 		case <-ticker.C:
-			r.cleanConnStates(w)
+			r.cleanConnStates()
 		}
 	}
 }
 
-func (r *Router) cleanConnStates(w *mgr.WorkerCtx) {
+func (r *Router) cleanConnStates() {
 	removeThreshold := time.Now().Add(-10 * time.Minute).Unix()
 
 	r.connStatesLock.Lock()
