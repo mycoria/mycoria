@@ -52,17 +52,16 @@ type Service struct { //nolint:maligned
 }
 
 var (
-	tunNameRegex = regexp.MustCompile(`^[A-z0-9]+$`)
-	domainRegex  = regexp.MustCompile(
+	tunNameRegex   = regexp.MustCompile(`^[A-z0-9]+$`)
+	subDomainRegex = regexp.MustCompile(
 		`^` + // match beginning
 			`(` + // start subdomain group
 			`(xn--)?` + // idn prefix
 			`[a-z0-9_-]{1,63}` + // main chunk
 			`\.` + // ending with a dot
 			`)*` + // end subdomain group, allow any number of subdomains
-			`(xn--)?` + // TLD idn prefix
-			`[a-z0-9_-]{1,63}` + // TLD main chunk with at least one character (for custom ones)
-			`\.` + // ending with a dot
+			`(xn--)?` + // idn prefix
+			`[a-z0-9_-]{1,63}` + // main chunk
 			`$`, // match end
 	)
 )
@@ -262,17 +261,18 @@ Configure at least one of these settings:
 func checkDomain(domain string) (cleaned string, valid bool) {
 	// Clean domain.
 	domain = strings.ToLower(domain)
-	if !strings.HasSuffix(domain, ".") {
-		domain += "."
-	}
+	domain = strings.TrimSuffix(domain, ".")
+
+	// Remove ".myco"
+	domain = strings.TrimSuffix(domain, "."+DefaultTLD)
 
 	// Check max length.
-	if len(domain) > 256 {
+	if len(domain) > (256 - len(DefaultTLD)) {
 		return domain, false
 	}
 
-	// check with regex
-	if !domainRegex.MatchString(domain) {
+	// Check (now subdomain) with regex.
+	if !subDomainRegex.MatchString(domain) {
 		return domain, false
 	}
 
