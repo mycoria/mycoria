@@ -55,14 +55,18 @@ func (h *HelloPingHandler) getActive(remote netip.Addr) *helloPingState {
 	h.activeLock.Lock()
 	defer h.activeLock.Unlock()
 
-	return h.active[remote]
+	state := h.active[remote]
+	if state != nil && time.Now().Before(state.expires) {
+		return state
+	}
+
+	return nil
 }
 
 func (h *HelloPingHandler) setActive(remote netip.Addr, helloState *helloPingState) {
 	h.activeLock.Lock()
 	defer h.activeLock.Unlock()
 
-	helloState.expires = time.Now().Add(30 * time.Second)
 	h.active[remote] = helloState
 }
 
@@ -133,7 +137,8 @@ func (h *HelloPingHandler) Send(dstIP netip.Addr) (notify <-chan struct{}, err e
 		return nil, fmt.Errorf("send ping: %w", err)
 	}
 
-	// Ping is sent, save to state.
+	// Ping is sent, add expiry and save to state.
+	pingState.expires = time.Now().Add(30 * time.Second)
 	h.setActive(dstIP, pingState)
 	return pingState.notify, nil
 }
@@ -179,7 +184,7 @@ func (h *HelloPingHandler) handlePingHelloRequest(w *mgr.WorkerCtx, f frame.Fram
 
 	w.Debug(
 		"hello (server) successful",
-		"ID", f.SrcIP(),
+		"router", f.SrcIP(),
 	)
 	return nil
 }
@@ -217,13 +222,14 @@ func (h *HelloPingHandler) handlePingHelloResponse(w *mgr.WorkerCtx, f frame.Fra
 		return fmt.Errorf("set encryption session: %w", err)
 	}
 
-	// Notify waiters and set state again to block too quick requests.
+	// Notify waiters, set cooldown (to block too quick requests) and save.
 	close(pingState.notify)
+	pingState.expires = time.Now().Add(5 * time.Second)
 	h.setActive(f.SrcIP(), pingState)
 
 	w.Debug(
 		"hello (client) successful",
-		"ID", f.SrcIP(),
+		"router", f.SrcIP(),
 	)
 	return nil
 }
