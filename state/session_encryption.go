@@ -233,7 +233,7 @@ func (s *EncryptionSession) In(seqNum uint32, prio bool) (
 
 	// Check if encryption is set up.
 	if s.inCipher == nil {
-		return nil, errors.New("encryption is not set up")
+		return nil, ErrEncryptionNotSetUp
 	}
 
 	// Get correct sequence handler.

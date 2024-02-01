@@ -10,6 +10,7 @@ import (
 	"github.com/mycoria/mycoria/frame"
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/mgr"
+	"github.com/mycoria/mycoria/state"
 )
 
 type connStateKey struct {
@@ -49,6 +50,13 @@ func (r *Router) handleIncomingTraffic(f frame.Frame) error {
 
 	// Unseal.
 	if err := f.Unseal(session); err != nil {
+		// Send error ping if encryption is not set up.
+		if errors.Is(err, state.ErrEncryptionNotSetUp) {
+			if err := r.ErrorPing.Send(PingErrorNoEncryptionKeys, "", f.SrcIP()); err != nil {
+				return fmt.Errorf("send error ping no encryption keys: %w", err)
+			}
+			return nil // TODO: Do we need to return the frame to pool here?
+		}
 		return fmt.Errorf("unseal: %w", err)
 	}
 

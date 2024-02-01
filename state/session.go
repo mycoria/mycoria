@@ -9,7 +9,7 @@ import (
 	"github.com/mycoria/mycoria/m"
 )
 
-// Errors.
+// Sequence Errors.
 var (
 	ErrImmediateDuplicateFrame = errors.New("immediate duplicate frame")
 	ErrDelayedDuplicateFrame   = errors.New("delayed duplicate frame")
@@ -17,6 +17,11 @@ var (
 	ErrDelayedFrame            = errors.New("delayed frame")
 	ErrTooOldFrame             = errors.New("too old frame")
 	ErrTooNewFrame             = errors.New("too new frame")
+)
+
+// Encryption Errors.
+var (
+	ErrEncryptionNotSetUp = errors.New("encryption is not set up")
 )
 
 // Session is a logical session with another router.

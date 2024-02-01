@@ -36,6 +36,7 @@ type Router struct {
 
 	HelloPing    *HelloPingHandler
 	PingPong     *PingPongHandler
+	ErrorPing    *ErrorPingHandler
 	AnnouncePing *AnnouncePingHandler
 
 	instance instance
@@ -97,6 +98,10 @@ func New(instance instance, routerConfig Config) (*Router, error) {
 	}
 	r.PingPong = NewPingPongHandler(r)
 	if err := r.RegisterPingHandler(r.PingPong); err != nil {
+		return nil, err
+	}
+	r.ErrorPing = NewErrorPingHandler(r)
+	if err := r.RegisterPingHandler(r.ErrorPing); err != nil {
 		return nil, err
 	}
 	r.AnnouncePing = NewAnnouncePingHandler(r)
