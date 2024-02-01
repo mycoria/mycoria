@@ -20,6 +20,8 @@ const (
 	announceInterval = 5 * time.Minute
 )
 
+var errAnnouncementIsLooping = errors.New("announcement is looping")
+
 // AnnouncePingHandler handles announce pings.
 type AnnouncePingHandler struct {
 	r *Router
@@ -100,6 +102,11 @@ func (h *AnnouncePingHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingH
 	// Parse announement ping, including appendix data.
 	msg, hops, err := h.parseAnnouncePing(f, data)
 	if err != nil {
+		// If the announcement is looping, ignore it.
+		if errors.Is(err, errAnnouncementIsLooping) {
+			return nil
+		}
+
 		return fmt.Errorf("parse announce ping: %w", err)
 	}
 
@@ -176,6 +183,9 @@ func (h *AnnouncePingHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingH
 			// DEBUG:
 			// fmt.Println(h.r.table.Format())
 		}
+
+		// TODO: AddRoute should report back if the route is good enough.
+		// If not, do not forward!
 	}
 
 	// Select peers to forward to.
@@ -195,14 +205,27 @@ func (h *AnnouncePingHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingH
 	// Forward to all peers, except where it came from.
 	apx := f.AppendixData()
 	signingContext := h.signingContext(f)
+forwardToPeers:
 	for _, sendLink := range forwardTo {
 		if sendLink == nil {
+			continue
+		}
+
+		// Do not send to announcing router.
+		if sendLink.Peer() == f.SrcIP() {
 			continue
 		}
 
 		// Do not send back to link where it came from.
 		if sendLink.Peer() == recvLink.Peer() {
 			continue
+		}
+
+		// Do not send to peers which are already in the hops.
+		for _, hop := range hops {
+			if sendLink.Peer() == hop.Router {
+				continue forwardToPeers
+			}
 		}
 
 		// Clone frame.
@@ -293,6 +316,11 @@ func (h *AnnouncePingHandler) parseAnnouncePing(f frame.Frame, pingData []byte) 
 		err := cbor.Unmarshal(apx[:len(apx)-64], &attached)
 		if err != nil {
 			return nil, nil, fmt.Errorf("unmarshal announce attachment at layer %d: %w", i, err)
+		}
+
+		// Check if this us.
+		if attached.Router.IP == h.r.instance.Identity().IP {
+			return nil, nil, errAnnouncementIsLooping
 		}
 
 		// Get (or create) session.
