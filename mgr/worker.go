@@ -109,9 +109,19 @@ func (w *WorkerCtx) LogAttrs(level slog.Level, msg string, attrs ...slog.Attr) {
 	w.logger.LogAttrs(w.ctx, level, msg, attrs...)
 }
 
+// Go starts the given function in a goroutine (as a "worker").
+// The worker context has
+// - A separate context which is canceled when the functions returns.
+// - Access to named structure logging.
+// - Given function is re-run after failure (with backoff).
+// - Panic catching.
+// - Flow control helpers.
+func (m *Manager) Go(name string, fn func(w *WorkerCtx) error) {
+	go m.manageWorker(name, fn)
+}
+
 // StartWorker starts a new worker.
-// It will be restarted if it fails.
-// The given WorkerCtx must not be used after the worker function returns.
+// Use Go() instead.
 func (m *Manager) StartWorker(name string, fn func(w *WorkerCtx) error) {
 	go m.manageWorker(name, fn)
 }
@@ -188,6 +198,51 @@ func (m *Manager) manageWorker(name string, fn func(w *WorkerCtx) error) {
 				return
 			}
 		}
+	}
+}
+
+// Do directly executes the given function (as a "worker").
+// The worker context has
+// - A separate context which is canceled when the functions returns.
+// - Access to named structure logging.
+// - Given function is re-run after failure (with backoff).
+// - Panic catching.
+// - Flow control helpers.
+func (m *Manager) Do(name string, fn func(w *WorkerCtx) error) error {
+	m.workerStart()
+	defer m.workerDone()
+
+	// Create context.
+	w := &WorkerCtx{
+		logger: m.logger.With("worker", name),
+	}
+
+	// Run worker.
+	panicInfo, err := m.runWorker(w, fn)
+	switch {
+	case err == nil:
+		// No error means that the worker is finished.
+		return nil
+
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		// A canceled context or dexceeded eadline also means that the worker is finished.
+		return err
+
+	default:
+		// Log error and return.
+		if panicInfo != "" {
+			m.Error(
+				"worker failed",
+				"err", err,
+				"file", panicInfo,
+			)
+		} else {
+			m.Error(
+				"worker failed",
+				"err", err,
+			)
+		}
+		return err
 	}
 }
 

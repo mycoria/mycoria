@@ -1,4 +1,4 @@
-package api
+package dns
 
 import (
 	"fmt"
@@ -13,7 +13,7 @@ import (
 )
 
 // SendRouterAdvertisement sends a router advertisement to the tun interface to configure DNS via RDNSS and DNSSL.
-func (api *API) SendRouterAdvertisement(ifAddr netip.Addr) error {
+func (srv *Server) SendRouterAdvertisement(ifAddr netip.Addr) error {
 	// RFC4861 & RFC4191
 	advert := &ndp.RouterAdvertisement{
 		CurrentHopLimit: 64,
@@ -63,7 +63,7 @@ func (api *API) SendRouterAdvertisement(ifAddr netip.Addr) error {
 	}
 
 	// Create full packet and copy ICMP message.
-	offset := api.tunDevice.SendRawOffset()
+	offset := srv.instance.TunDevice().SendRawOffset()
 	packetData := make([]byte, offset+ipv6.HeaderLen+len(icmpData))
 	copy(packetData[offset+ipv6.HeaderLen:], icmpData)
 
@@ -79,6 +79,6 @@ func (api *API) SendRouterAdvertisement(ifAddr netip.Addr) error {
 	copy(header[24:40], dstData[:])
 
 	// Submit to writer.
-	api.tunDevice.SendRaw <- packetData
+	srv.instance.TunDevice().SendRaw <- packetData
 	return nil
 }

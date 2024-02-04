@@ -55,7 +55,7 @@ func (r *Router) handleTunPacket(w *mgr.WorkerCtx, packetData []byte) {
 	// Raw packet handling.
 	if dst == config.DefaultAPIAddress {
 		// Submit packet to API if going to API IP.
-		r.instance.API().SubmitPacket(packetData)
+		r.instance.NetStack().SubmitPacket(packetData)
 		return
 	}
 

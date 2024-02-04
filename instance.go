@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mycoria/mycoria/api"
+	"github.com/mycoria/mycoria/api/dns"
+	"github.com/mycoria/mycoria/api/httpapi"
+	"github.com/mycoria/mycoria/api/netstack"
 	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/frame"
 	"github.com/mycoria/mycoria/m"
@@ -28,10 +30,12 @@ type Instance struct {
 
 	state     *state.State
 	tunDevice *tun.Device
-	api       *api.API
+	netstack  *netstack.NetStack
+	api       *httpapi.API
+	dns       *dns.Server
 
 	peering *peering.Peering
-	swtch   *switchr.Switch
+	switchr *switchr.Switch
 	router  *router.Router
 }
 
@@ -50,9 +54,8 @@ func New(version string, c *config.Config) (*Instance, error) {
 	}
 
 	// Create frame builder.
-	builder := frame.NewFrameBuilder()
-	builder.SetFrameMargins(peering.FrameOffset, peering.FrameOverhead)
-	instance.frameBuilder = builder
+	instance.frameBuilder = frame.NewFrameBuilder()
+	instance.frameBuilder.SetFrameMargins(peering.FrameOffset, peering.FrameOverhead)
 
 	// Load state and create state manager.
 	var stateStorage state.Storage
@@ -68,50 +71,62 @@ func New(version string, c *config.Config) (*Instance, error) {
 	default:
 		return nil, errors.New("unknown state file type")
 	}
-	stateMgr := state.New(instance, stateStorage)
-	instance.state = stateMgr
+	instance.state = state.New(instance, stateStorage)
 
 	// Create tunnel interface and add router IP.
-	tunDev, err := tun.Create(instance)
+	instance.tunDevice, err = tun.Create(instance)
 	if err != nil {
 		return nil, fmt.Errorf("create tun device: %w", err)
 	}
-	instance.tunDevice = tunDev
 
 	// Create API.
-	apiI, err := api.New(instance, tunDev)
+	instance.netstack, err = netstack.New(instance, instance.tunDevice)
 	if err != nil {
-		return nil, fmt.Errorf("create api endpoint: %w", err)
+		return nil, fmt.Errorf("create local API netstack: %w", err)
 	}
-	instance.api = apiI
+	ln, err := instance.netstack.ListenTCP(80)
+	if err != nil {
+		return nil, fmt.Errorf("listen on API netstack: %w", err)
+	}
+	instance.api, err = httpapi.New(instance, ln)
+	if err != nil {
+		return nil, fmt.Errorf("create local http API: %w", err)
+	}
+	packetConn, err := instance.netstack.ListenUDP(53)
+	if err != nil {
+		return nil, fmt.Errorf("listen on API netstack: %w", err)
+	}
+	instance.dns, err = dns.New(instance, packetConn)
+	if err != nil {
+		return nil, fmt.Errorf("create local http API: %w", err)
+	}
 
 	// Create router.
-	routerI, err := router.New(instance, router.Config{})
+	instance.router, err = router.New(instance, router.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("create router: %w", err)
 	}
-	instance.router = routerI
 
 	// Create switch.
-	switchI := switchr.New(instance, routerI.Input())
-	instance.swtch = switchI
+	instance.switchr = switchr.New(instance, instance.router.Input())
 
 	// Create peering.
-	peeringI := peering.New(instance, switchI.Input())
-	instance.peering = peeringI
+	instance.peering = peering.New(instance, instance.switchr.Input())
 
 	// Add protocols.
-	peeringI.AddProtocol("tcp", peering.ProtocolTCP)
+	instance.peering.AddProtocol("tcp", peering.ProtocolTCP)
 
 	// Add all modules to instance group.
 	instance.Group = mgr.NewGroup(
-		stateMgr,
-		tunDev,
-		apiI,
+		instance.state,
+		instance.tunDevice,
+		instance.netstack,
+		instance.api,
+		instance.dns,
 
-		peeringI,
-		switchI,
-		routerI,
+		instance.peering,
+		instance.switchr,
+		instance.router,
 	)
 
 	return instance, nil
@@ -132,6 +147,13 @@ func (i *Instance) Identity() *m.Address {
 	return i.identity
 }
 
+// FrameBuilder returns the frame builder.
+func (i *Instance) FrameBuilder() *frame.Builder {
+	return i.frameBuilder
+}
+
+/////
+
 // State returns the state manager.
 func (i *Instance) State() *state.State {
 	return i.state
@@ -142,15 +164,22 @@ func (i *Instance) TunDevice() *tun.Device {
 	return i.tunDevice
 }
 
-// API returns the api.
-func (i *Instance) API() *api.API {
+// NetStack returns the local API netstack.
+func (i *Instance) NetStack() *netstack.NetStack {
+	return i.netstack
+}
+
+// API returns the local http API.
+func (i *Instance) API() *httpapi.API {
 	return i.api
 }
 
-// FrameBuilder returns the frame builder.
-func (i *Instance) FrameBuilder() *frame.Builder {
-	return i.frameBuilder
+// DNS returns the local DNS server.
+func (i *Instance) DNS() *dns.Server {
+	return i.dns
 }
+
+/////
 
 // Peering returns the peering manager.
 func (i *Instance) Peering() *peering.Peering {
@@ -159,7 +188,7 @@ func (i *Instance) Peering() *peering.Peering {
 
 // Switch returns the switch.
 func (i *Instance) Switch() *switchr.Switch {
-	return i.swtch
+	return i.switchr
 }
 
 // Router returns the router.

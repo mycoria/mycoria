@@ -1,12 +1,10 @@
-package api
+package netstack
 
 import (
 	"fmt"
-	"net/http"
+	"net"
 	"net/netip"
-	"time"
 
-	"github.com/miekg/dns"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
@@ -19,6 +17,8 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 
+	"github.com/mycoria/mycoria/api/dns"
+	"github.com/mycoria/mycoria/api/httpapi"
 	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/mgr"
@@ -28,22 +28,16 @@ import (
 
 var apiAddress = netip.MustParseAddr("fd00::b909")
 
-// API is an the API collection connected via a virtual network stack.
-type API struct {
+// NetStack is virtual network stack to attach services to.
+type NetStack struct {
 	instance instance
 
+	nicID     tcpip.NICID
 	tunDevice *tun.Device
 	address   netip.Addr
 
-	netstack   *stack.Stack
-	netstackIO *channel.Endpoint
-
-	httpServerListener *gonet.TCPListener
-	httpServer         *http.Server
-
-	dnsServerBind *gonet.UDPConn
-	dnsServer     *dns.Server
-	dnsWorkerCtx  *mgr.WorkerCtx
+	stack   *stack.Stack
+	stackIO *channel.Endpoint
 }
 
 // instance is an interface subset of inst.Ance.
@@ -52,35 +46,37 @@ type instance interface {
 	Config() *config.Config
 	Identity() *m.Address
 	State() *state.State
+	DNS() *dns.Server
+	API() *httpapi.API
 }
 
 // New returns an initialized API connected to the given tun device.
 // Input packets must be submitted manually using SubmitPacket().
-func New(instance instance, tunDevice *tun.Device) (*API, error) {
+func New(instance instance, tunDevice *tun.Device) (*NetStack, error) {
 	// getMTU := instance.Config().OverlayMTU// FIXME
 
-	const nicID = 1
-	api := &API{
+	ns := &NetStack{
 		instance:  instance,
+		nicID:     1,
 		tunDevice: tunDevice,
 		address:   apiAddress,
 	}
 
 	// Create network stack.
-	api.netstack = stack.New(stack.Options{
+	ns.stack = stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv6.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, icmp.NewProtocol6},
 	})
 	// Configure network stack.
 	sackEnabledOpt := tcpip.TCPSACKEnabled(true) // TCP SACK is disabled by default
-	tErr := api.netstack.SetTransportProtocolOption(tcp.ProtocolNumber, &sackEnabledOpt)
+	tErr := ns.stack.SetTransportProtocolOption(tcp.ProtocolNumber, &sackEnabledOpt)
 	if tErr != nil {
 		return nil, fmt.Errorf("failed to enable TCP SACK: %v", tErr)
 	}
 	// Create API endpoint to communicate with stack.
-	api.netstackIO = channel.New(128, 1500, "") // FIXME: uint32(getMTU())
+	ns.stackIO = channel.New(128, 1500, "") // FIXME: uint32(getMTU())
 	// Add API endpoint to stack.
-	tErr = api.netstack.CreateNIC(nicID, api.netstackIO)
+	tErr = ns.stack.CreateNIC(ns.nicID, ns.stackIO)
 	if tErr != nil {
 		return nil, fmt.Errorf("failed to create NIC: %v", tErr)
 	}
@@ -88,81 +84,69 @@ func New(instance instance, tunDevice *tun.Device) (*API, error) {
 	// Add listen address and default route.
 	listenAddress := tcpip.ProtocolAddress{
 		Protocol:          ipv6.ProtocolNumber,
-		AddressWithPrefix: tcpip.AddrFromSlice(api.address.AsSlice()).WithPrefix(),
+		AddressWithPrefix: tcpip.AddrFromSlice(ns.address.AsSlice()).WithPrefix(),
 	}
-	tErr = api.netstack.AddProtocolAddress(nicID, listenAddress, stack.AddressProperties{})
+	tErr = ns.stack.AddProtocolAddress(ns.nicID, listenAddress, stack.AddressProperties{})
 	if tErr != nil {
 		return nil, fmt.Errorf("failed to add API listen address to netstack NIC: %v", tErr)
 	}
-	api.netstack.AddRoute(tcpip.Route{Destination: header.IPv6EmptySubnet, NIC: nicID})
+	ns.stack.AddRoute(tcpip.Route{Destination: header.IPv6EmptySubnet, NIC: ns.nicID})
 
-	// Add HTTP server.
-	var err error
-	api.httpServerListener, err = gonet.ListenTCP(api.netstack, tcpip.FullAddress{
-		NIC:  nicID,
-		Addr: tcpip.AddrFromSlice(api.address.AsSlice()),
-		Port: 80,
-	}, ipv6.ProtocolNumber)
-	if err != nil {
-		return nil, fmt.Errorf("failed to listen with TCP on netstack: %w", err)
-	}
-	api.httpServer = &http.Server{
-		Handler:      api,
-		ReadTimeout:  time.Second,
-		WriteTimeout: time.Second,
-	}
-
-	// Add DNS server.
-	var wq waiter.Queue
-	ep, tErr := api.netstack.NewEndpoint(udp.ProtocolNumber, ipv6.ProtocolNumber, &wq)
-	if tErr != nil {
-		return nil, fmt.Errorf("failed to create packet endpoint for DNS server: %v", tErr)
-	}
-	tErr = ep.Bind(tcpip.FullAddress{
-		NIC:  nicID,
-		Addr: tcpip.AddrFromSlice(api.address.AsSlice()),
-		Port: 53,
-	})
-	if tErr != nil {
-		return nil, fmt.Errorf("failed to bind packet endpoint for DNS server: %v", tErr)
-	}
-	api.dnsServerBind = gonet.NewUDPConn(&wq, ep)
-	api.dnsServer = &dns.Server{
-		PacketConn:   api.dnsServerBind,
-		Handler:      api,
-		ReadTimeout:  time.Second,
-		WriteTimeout: time.Second,
-	}
-
-	return api, nil
+	return ns, nil
 }
 
 // Start starts the API stack.
-func (api *API) Start(m *mgr.Manager) error {
-	m.StartWorker("response packet handler", api.handleResponsePackets)
-	m.StartWorker("http server", api.netstackHTTPServer)
-	m.StartWorker("dns server", api.netstackDNSServer)
+func (ns *NetStack) Start(m *mgr.Manager) error {
+	m.StartWorker("response packet handler", ns.handleResponsePackets)
 
 	return nil
 }
 
 // Stop stops the API stack.
-func (api *API) Stop(m *mgr.Manager) error {
-	if err := api.httpServer.Close(); err != nil {
-		m.Error("failed to stop http server", "err", err)
-	}
-	if err := api.dnsServer.Shutdown(); err != nil {
-		m.Error("failed to stop dns server", "err", err)
-	}
+func (ns *NetStack) Stop(m *mgr.Manager) error {
 	return nil
 }
 
+// ListenTCP returns a new listener on the given port of the API address.
+func (ns *NetStack) ListenTCP(port uint16) (net.Listener, error) {
+	ln, err := gonet.ListenTCP(ns.stack, tcpip.FullAddress{
+		NIC:  ns.nicID,
+		Addr: tcpip.AddrFromSlice(ns.address.AsSlice()),
+		Port: port,
+	}, ipv6.ProtocolNumber)
+	if err != nil {
+		return nil, fmt.Errorf("failed to listen with TCP on netstack: %w", err)
+	}
+
+	return ln, nil
+}
+
+// ListenUDP returns a new listener on the given port of the API address.
+func (ns *NetStack) ListenUDP(port uint16) (net.PacketConn, error) {
+	var wq waiter.Queue
+	ep, err := ns.stack.NewEndpoint(udp.ProtocolNumber, ipv6.ProtocolNumber, &wq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create packet endpoint for DNS server: %v", err)
+	}
+	err = ep.Bind(tcpip.FullAddress{
+		NIC:  ns.nicID,
+		Addr: tcpip.AddrFromSlice(ns.address.AsSlice()),
+		Port: port,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to bind packet endpoint for DNS server: %v", err)
+	}
+	packetConn := gonet.NewUDPConn(&wq, ep)
+
+	return packetConn, nil
+}
+
 // SubmitPacket is the send bridge to the API network stack.
-func (api *API) SubmitPacket(packet []byte) {
+func (ns *NetStack) SubmitPacket(packet []byte) {
 	// DEBUG:
 	// fmt.Printf("in:\n%s", hex.Dump(packet))
 
-	api.netstackIO.InjectInbound(
+	ns.stackIO.InjectInbound(
 		ipv6.ProtocolNumber,
 		stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(packet)}),
 	)
@@ -171,10 +155,10 @@ func (api *API) SubmitPacket(packet []byte) {
 }
 
 // WriteNotify is the recv bridge to the API network stack.
-func (api *API) handleResponsePackets(w *mgr.WorkerCtx) error {
+func (ns *NetStack) handleResponsePackets(w *mgr.WorkerCtx) error {
 	for {
 		// Get from network stack.
-		pktBuf := api.netstackIO.ReadContext(w.Ctx())
+		pktBuf := ns.stackIO.ReadContext(w.Ctx())
 		if pktBuf == nil {
 			return nil
 		}
@@ -182,7 +166,7 @@ func (api *API) handleResponsePackets(w *mgr.WorkerCtx) error {
 		// *tun.Device.Write() wants a 10 byte offset for packet data.
 		// Probably because it wants to use some special network stack features,
 		// where it needs to some space in front of the packet.
-		offset := api.tunDevice.SendRawOffset()
+		offset := ns.tunDevice.SendRawOffset()
 
 		// Copy all parts of the packet to one slice.
 		pktParts := pktBuf.AsSlices()
@@ -202,7 +186,7 @@ func (api *API) handleResponsePackets(w *mgr.WorkerCtx) error {
 		// pktBuf.DecRef()
 
 		// Write packet data to tun device.
-		dataWritten, err := api.tunDevice.Write([][]byte{pktWithOffset}, offset)
+		dataWritten, err := ns.tunDevice.Write([][]byte{pktWithOffset}, offset)
 		switch {
 		case err != nil:
 			w.Error("failed to write packet", "err", err)

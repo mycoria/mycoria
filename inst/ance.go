@@ -1,7 +1,9 @@
 package inst
 
 import (
-	"github.com/mycoria/mycoria/api"
+	"github.com/mycoria/mycoria/api/dns"
+	"github.com/mycoria/mycoria/api/httpapi"
+	"github.com/mycoria/mycoria/api/netstack"
 	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/frame"
 	"github.com/mycoria/mycoria/m"
@@ -17,12 +19,14 @@ type Ance interface {
 	Version() string
 	Config() *config.Config
 	Identity() *m.Address
-	State() *state.State
-
-	TunDevice() *tun.Device
-	API() *api.API
-
 	FrameBuilder() *frame.Builder
+
+	State() *state.State
+	TunDevice() *tun.Device
+	NetStack() *netstack.NetStack
+	API() *httpapi.API
+	DNS() *dns.Server
+
 	Peering() *peering.Peering
 	Switch() *switchr.Switch
 	Router() *router.Router
@@ -30,18 +34,20 @@ type Ance interface {
 
 // AnceStub (inst.AnceStub) is a stub to easily create an inst.Ance.
 type AnceStub struct {
-	VersionStub  string
-	ConfigStub   *config.Config
-	IdentityStub *m.Address
-	StateStub    *state.State
-
-	TunDeviceStub *tun.Device
-	APIStub       *api.API
-
+	VersionStub      string
+	ConfigStub       *config.Config
+	IdentityStub     *m.Address
 	FrameBuilderStub *frame.Builder
-	PeeringStub      *peering.Peering
-	SwitchStub       *switchr.Switch
-	RouterStub       *router.Router
+
+	StateStub     *state.State
+	TunDeviceStub *tun.Device
+	NetStackStub  *netstack.NetStack
+	APIStub       *httpapi.API
+	DNSStub       *dns.Server
+
+	PeeringStub *peering.Peering
+	SwitchStub  *switchr.Switch
+	RouterStub  *router.Router
 }
 
 var _ Ance = &AnceStub{}
@@ -61,6 +67,13 @@ func (stub *AnceStub) Identity() *m.Address {
 	return stub.IdentityStub
 }
 
+// FrameBuilder returns the frame builder.
+func (stub *AnceStub) FrameBuilder() *frame.Builder {
+	return stub.FrameBuilderStub
+}
+
+/////
+
 // State returns the state manager.
 func (stub *AnceStub) State() *state.State {
 	return stub.StateStub
@@ -71,15 +84,22 @@ func (stub *AnceStub) TunDevice() *tun.Device {
 	return stub.TunDeviceStub
 }
 
-// API returns the api.
-func (stub *AnceStub) API() *api.API {
+// NetStack returns the local API netstack.
+func (stub *AnceStub) NetStack() *netstack.NetStack {
+	return stub.NetStackStub
+}
+
+// API returns the local http API.
+func (stub *AnceStub) API() *httpapi.API {
 	return stub.APIStub
 }
 
-// FrameBuilder returns the frame builder.
-func (stub *AnceStub) FrameBuilder() *frame.Builder {
-	return stub.FrameBuilderStub
+// DNS returns the local DNS server.
+func (stub *AnceStub) DNS() *dns.Server {
+	return stub.DNSStub
 }
+
+/////
 
 // Peering returns the peering manager.
 func (stub *AnceStub) Peering() *peering.Peering {

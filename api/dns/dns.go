@@ -1,6 +1,7 @@
-package api
+package dns
 
 import (
+	"net"
 	"net/netip"
 	"strings"
 	"time"
@@ -8,23 +9,58 @@ import (
 	"github.com/miekg/dns"
 
 	"github.com/mycoria/mycoria/config"
+	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/mgr"
+	"github.com/mycoria/mycoria/state"
+	"github.com/mycoria/mycoria/tun"
 )
 
-func (api *API) netstackDNSServer(w *mgr.WorkerCtx) error {
-	// Configure server.
-	api.dnsWorkerCtx = w
+// Server is DNS Server.
+type Server struct {
+	instance instance
+	mgr      *mgr.Manager
 
-	// Start serving.
-	err := api.dnsServer.ActivateAndServe()
-	if err != nil {
-		return err
+	dnsServer     *dns.Server
+	dnsServerBind net.PacketConn
+}
+
+// instance is an interface subset of inst.Ance.
+type instance interface {
+	Version() string
+	Config() *config.Config
+	Identity() *m.Address
+	State() *state.State
+	TunDevice() *tun.Device
+}
+
+// New returns a new HTTP API.
+func New(instance instance, ln net.PacketConn) (*Server, error) {
+	// Create HTTP server.
+	srv := &Server{
+		instance:      instance,
+		dnsServerBind: ln,
+	}
+	srv.dnsServer = &dns.Server{
+		PacketConn:   ln,
+		Handler:      srv,
+		ReadTimeout:  time.Second,
+		WriteTimeout: time.Second,
 	}
 
+	return srv, nil
+}
+
+// Start starts the API.
+func (srv *Server) Start(m *mgr.Manager) error {
+	srv.mgr = m
+
+	// Start DNS server worker.
+	m.StartWorker("dns server", srv.dnsServerWorker)
+
 	// Advertise DNS server via RA.
-	err = api.SendRouterAdvertisement(api.instance.Identity().IP)
+	err := srv.SendRouterAdvertisement(srv.instance.Identity().IP)
 	if err != nil {
-		w.Error(
+		m.Error(
 			"failed to send router advertisement to announce DNS server",
 			"err", err,
 		)
@@ -33,9 +69,33 @@ func (api *API) netstackDNSServer(w *mgr.WorkerCtx) error {
 	return nil
 }
 
+// Stop stops the API.
+func (srv *Server) Stop(m *mgr.Manager) error {
+	if err := srv.dnsServer.Shutdown(); err != nil {
+		m.Error("failed to stop dns server", "err", err)
+	}
+	return nil
+}
+
+func (srv *Server) dnsServerWorker(w *mgr.WorkerCtx) error {
+	// Start serving.
+	err := srv.dnsServer.ActivateAndServe()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // ServeDNS implements the DNS server handler.
-func (api *API) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
-	wkr := api.dnsWorkerCtx
+func (srv *Server) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
+	_ = srv.mgr.Do("request", func(wkr *mgr.WorkerCtx) error {
+		srv.handleRequest(wkr, w, r)
+		return nil
+	})
+}
+
+func (srv *Server) handleRequest(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dns.Msg) {
 	q := r.Question[0]
 	queryName := strings.ToLower(q.Name)
 
@@ -80,14 +140,14 @@ func (api *API) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}()
 
 	// Source 1: config.resolve
-	resolveToIP, ok := api.instance.Config().Resolve[mycoName]
+	resolveToIP, ok := srv.instance.Config().Resolve[mycoName]
 	if ok {
 		replyAAAA(wkr, w, r, resolveToIP)
 		return
 	}
 
 	// Source 2: config.friends
-	friend, ok := api.instance.Config().FriendsByName[mycoName]
+	friend, ok := srv.instance.Config().FriendsByName[mycoName]
 	if ok {
 		replyAAAA(wkr, w, r, friend.IP)
 		return

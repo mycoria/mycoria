@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/mycoria/mycoria/api"
+	"github.com/mycoria/mycoria/api/netstack"
 	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/frame"
 	"github.com/mycoria/mycoria/geomarker"
@@ -49,9 +49,9 @@ type instance interface {
 	Identity() *m.Address
 	State() *state.State
 	FrameBuilder() *frame.Builder
+	NetStack() *netstack.NetStack
 
 	TunDevice() *tun.Device
-	API() *api.API
 	Switch() *switchr.Switch
 	Peering() *peering.Peering
 }
