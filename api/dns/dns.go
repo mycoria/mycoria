@@ -3,6 +3,7 @@ package dns
 import (
 	"net"
 	"net/netip"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,6 +23,8 @@ type Server struct {
 
 	dnsServer     *dns.Server
 	dnsServerBind net.PacketConn
+
+	apiNames []string
 }
 
 // instance is an interface subset of inst.Ance.
@@ -39,6 +42,11 @@ func New(instance instance, ln net.PacketConn) (*Server, error) {
 	srv := &Server{
 		instance:      instance,
 		dnsServerBind: ln,
+		apiNames: []string{
+			"status", // Human interface.
+			"api",    // Computer interface.
+			"open",   // For TOFU Names.
+		},
 	}
 	srv.dnsServer = &dns.Server{
 		PacketConn:   ln,
@@ -55,7 +63,7 @@ func (srv *Server) Start(m *mgr.Manager) error {
 	srv.mgr = m
 
 	// Start DNS server worker.
-	m.StartWorker("dns server", srv.dnsServerWorker)
+	m.Go("dns server", srv.dnsServerWorker)
 
 	// Advertise DNS server via RA.
 	err := srv.SendRouterAdvertisement(srv.instance.Identity().IP)
@@ -138,6 +146,12 @@ func (srv *Server) handleRequest(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dn
 			"time", time.Since(started),
 		)
 	}()
+
+	// Source 0: API
+	if slices.Contains[[]string, string](srv.apiNames, mycoName) {
+		replyAAAA(wkr, w, r, config.DefaultAPIAddress)
+		return
+	}
 
 	// Source 1: config.resolve
 	resolveToIP, ok := srv.instance.Config().Resolve[mycoName]
