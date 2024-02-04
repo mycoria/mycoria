@@ -65,7 +65,7 @@ func (s *Switch) handler(w *mgr.WorkerCtx) error {
 			if err := s.handleFrame(f); err != nil {
 				w.Debug(
 					"failed to handle frame",
-					"src", f.SrcIP(),
+					"router", f.SrcIP(),
 					"err", err,
 				)
 			}
@@ -76,6 +76,11 @@ func (s *Switch) handler(w *mgr.WorkerCtx) error {
 }
 
 func (s *Switch) handleFrame(f frame.Frame) error {
+	// Ignore packets coming from myself.
+	if f.SrcIP() == s.instance.Identity().IP {
+		return nil
+	}
+
 	// Get switch block.
 	switchBlock := f.SwitchBlock()
 	if len(switchBlock) == 0 {
