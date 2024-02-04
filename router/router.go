@@ -11,7 +11,6 @@ import (
 	"github.com/mycoria/mycoria/api/netstack"
 	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/frame"
-	"github.com/mycoria/mycoria/geomarker"
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/mgr"
 	"github.com/mycoria/mycoria/peering"
@@ -71,7 +70,7 @@ func New(instance instance, routerConfig Config) (*Router, error) {
 	routerIP := instance.Identity().IP
 	routerPrefix := netip.PrefixFrom(routerIP, m.RegionPrefixBits)
 	// Make prefix more precise by looking up the country marker.
-	marker, err := geomarker.LookupCountryMarker(routerIP)
+	marker, err := m.LookupCountryMarker(routerIP)
 	if err == nil {
 		routerPrefix = marker.Prefix
 	}

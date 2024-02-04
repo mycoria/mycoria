@@ -1,10 +1,8 @@
-package geomarker
+package m
 
 import (
 	"errors"
 	"net/netip"
-
-	"github.com/mycoria/mycoria/m"
 )
 
 // ErrNotFound is return when a country is not found.
@@ -12,13 +10,13 @@ var ErrNotFound = errors.New("not found")
 
 // Continent Markers.
 var continentCodeToMarker = map[string]byte{
-	"EU": m.ContinentEurope,
-	"AF": m.ContinentAfrica,
-	"WA": m.ContinentWestAsia,
-	"NA": m.ContinentNorthAmerica,
-	"SA": m.ContinentSouthAmerica,
-	"OC": m.ContinentOceania,
-	"EA": m.ContinentEastAsia,
+	"EU": ContinentEurope,
+	"AF": ContinentAfrica,
+	"WA": ContinentWestAsia,
+	"NA": ContinentNorthAmerica,
+	"SA": ContinentSouthAmerica,
+	"OC": ContinentOceania,
+	"EA": ContinentEastAsia,
 }
 
 // Region Markers.
@@ -92,18 +90,18 @@ func (cgm CountryGeoMarking) Prefix() (netip.Prefix, error) {
 func (cgm CountryGeoMarking) BaseIP() netip.Addr {
 	// If there is no separate country marker, take the quick route.
 	if cgm.CountryMarkerBits == 0 {
-		return m.MakeBaseIP([]byte{
-			m.BaseNet,
-			m.TypeRoutingAddress |
+		return MakeBaseIP([]byte{
+			BaseNet,
+			TypeRoutingAddress |
 				continentCodeToMarker[cgm.ContinentCode] |
 				regionCodeToMarker[cgm.RegionCode],
 		})
 	}
 
 	// Make prefix with additional country marker.
-	return m.MakeBaseIP([]byte{
-		m.BaseNet,
-		m.TypeRoutingAddress |
+	return MakeBaseIP([]byte{
+		BaseNet,
+		TypeRoutingAddress |
 			continentCodeToMarker[cgm.ContinentCode] |
 			regionCodeToMarker[cgm.RegionCode],
 		// Shift country bits into correct location.

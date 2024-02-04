@@ -1,20 +1,17 @@
-package geomarker
+package m
 
 import (
-	"crypto/rand"
 	"errors"
 	"net/netip"
 	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/mycoria/mycoria/m"
 )
 
 var prefixTestData = map[string]netip.Prefix{
-	"AT": m.MustPrefix([]byte{0xfd, 0x1f, 0x00}, 18),
-	"NZ": m.MustPrefix([]byte{0xfd, 0x66}, 16),
+	"AT": MustPrefix([]byte{0xfd, 0x1f, 0x00}, 18),
+	"NZ": MustPrefix([]byte{0xfd, 0x66}, 16),
 }
 
 func TestGeoMarkerCreation(t *testing.T) {
@@ -84,7 +81,7 @@ func TestGeoMarkerLookup(t *testing.T) {
 		ip := makeRandomAddress(prefix)
 
 		// Step 3: check random ip
-		if m.GetAddressType(ip) != m.TypeGeoMarked {
+		if GetAddressType(ip) != TypeGeoMarked {
 			t.Errorf("ip %s (%s) should be of type geomarked", ip, cc)
 		}
 
@@ -109,7 +106,7 @@ func TestRandomGeoMarkerLookups(t *testing.T) {
 		success    int
 	)
 	for i := 0; i < iterations; i++ {
-		ip := makeRandomAddress(m.RoutingAddressPrefix)
+		ip := makeRandomAddress(RoutingAddressPrefix)
 		cml, err := LookupCountryMarker(ip)
 		if err != nil {
 			// Continue with next if not found.
@@ -130,34 +127,4 @@ func TestRandomGeoMarkerLookups(t *testing.T) {
 	} else {
 		t.Logf("%d out of %d iterations were successful", success, iterations)
 	}
-}
-
-func makeRandomAddress(prefix netip.Prefix) netip.Addr {
-	// Get random bytes.
-	var buf [16]byte
-	_, err := rand.Read(buf[:])
-	if err != nil {
-		panic(err)
-	}
-
-	// Copy prefix to buf.
-	prefixBuf := prefix.Addr().AsSlice()
-	// Copy full bytes.
-	var index int
-	for ; index < prefix.Bits()/8; index++ {
-		buf[index] = prefixBuf[index]
-	}
-	// Copy last partial byte.
-	remainingBits := prefix.Bits() % 8
-	if remainingBits > 0 {
-		buf[index] = prefixBuf[index] | (buf[index] >> byte(remainingBits))
-	}
-
-	// Create IP and check it.
-	ip := netip.AddrFrom16(buf)
-	if !prefix.Contains(ip) {
-		panic("random ip not in prefix")
-	}
-
-	return ip
 }

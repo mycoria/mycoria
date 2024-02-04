@@ -11,7 +11,6 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/mycoria/mycoria/config"
-	"github.com/mycoria/mycoria/geomarker"
 	"github.com/mycoria/mycoria/m"
 )
 
@@ -27,7 +26,7 @@ var generateCmd = &cobra.Command{
 
 func generate(cmd *cobra.Command, args []string) error {
 	// Get country prefix.
-	prefix, err := geomarker.GetCountryPrefix(args[0])
+	prefix, err := m.GetCountryPrefix(args[0])
 	if err != nil {
 		if args[0] == "US" {
 			return fmt.Errorf("invalid country code: in case of the US, please specify the state as US-XX")
