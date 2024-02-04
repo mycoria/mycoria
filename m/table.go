@@ -533,7 +533,27 @@ func (rt *RoutingTable) Format() string {
 			previous = rte
 			fmt.Fprintln(b, rte.RoutingPrefix)
 		}
-		fmt.Fprintf(b, "  %d: %s %s\n", i+1, rte.Source, rte.DstIP)
+
+		cc := "?"
+		if cml, _ := LookupCountryMarker(rte.DstIP); cml != nil {
+			cc = cml.Country
+		}
+
+		switch {
+		case rte.Source == RouteSourcePeer:
+			fmt.Fprintf(b, "  %d: %s %s cc=%s hops=%d\n", i+1,
+				rte.Source, rte.DstIP, cc, rte.Path.TotalHops,
+			)
+		default:
+			fmt.Fprintf(b,
+				"  %d: %s %s cc=%s hops=%d via=%x\n", i+1,
+				rte.Source,
+				rte.DstIP,
+				cc,
+				rte.Path.TotalHops,
+				rte.Path.Hops[0].ForwardLabel,
+			)
+		}
 	}
 
 	return b.String()
