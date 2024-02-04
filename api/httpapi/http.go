@@ -53,7 +53,7 @@ func New(instance instance, ln net.Listener) (*API, error) {
 // Start starts the API.
 func (api *API) Start(m *mgr.Manager) error {
 	api.mgr = m
-	m.StartWorker("http server", api.httpServerWorker)
+	m.Go("http server", api.httpServerWorker)
 
 	return nil
 }

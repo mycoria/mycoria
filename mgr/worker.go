@@ -120,12 +120,6 @@ func (m *Manager) Go(name string, fn func(w *WorkerCtx) error) {
 	go m.manageWorker(name, fn)
 }
 
-// StartWorker starts a new worker.
-// Use Go() instead.
-func (m *Manager) StartWorker(name string, fn func(w *WorkerCtx) error) {
-	go m.manageWorker(name, fn)
-}
-
 func (m *Manager) manageWorker(name string, fn func(w *WorkerCtx) error) {
 	m.workerStart()
 	defer m.workerDone()

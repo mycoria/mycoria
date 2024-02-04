@@ -117,8 +117,8 @@ func newLinkBase(
 }
 
 func (link *LinkBase) startWorkers() {
-	link.peering.mgr.StartWorker("link reader", link.reader)
-	link.peering.mgr.StartWorker("link writer", link.writer)
+	link.peering.mgr.Go("link reader", link.reader)
+	link.peering.mgr.Go("link writer", link.writer)
 }
 
 // String returns a human readable summary.

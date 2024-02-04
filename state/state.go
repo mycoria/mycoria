@@ -57,7 +57,7 @@ func New(instance instance, storage Storage) *State {
 // Start starts brings the device online and starts workers.
 func (state *State) Start(mgr *mgr.Manager) error {
 	state.mgr = mgr
-	mgr.StartWorker("session cleaner", state.sessionCleanerWorker)
+	mgr.Go("session cleaner", state.sessionCleanerWorker)
 	return nil
 }
 

@@ -43,7 +43,7 @@ func New(instance instance, upstreamHandler chan frame.Frame) *Switch {
 // Start starts the switch.
 func (s *Switch) Start(mgr *mgr.Manager) error {
 	for i := 0; i < runtime.NumCPU(); i++ {
-		mgr.StartWorker("switch", s.handler)
+		mgr.Go("switch", s.handler)
 	}
 	return nil
 }

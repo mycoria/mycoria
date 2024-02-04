@@ -90,9 +90,9 @@ func (d *Device) Start(m *mgr.Manager) error {
 		return err
 	}
 
-	m.StartWorker("read packets", d.tunReader)
-	m.StartWorker("write packets", d.tunWriter)
-	m.StartWorker("handle tun events", d.handleTunEvents)
+	m.Go("read packets", d.tunReader)
+	m.Go("write packets", d.tunWriter)
+	m.Go("handle tun events", d.handleTunEvents)
 	return nil
 }
 

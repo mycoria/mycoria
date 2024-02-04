@@ -60,8 +60,8 @@ func New(instance instance, frameHandler chan frame.Frame) *Peering {
 func (p *Peering) Start(mgr *mgr.Manager) error {
 	p.mgr = mgr
 
-	mgr.StartWorker("listen manager", p.listenMgr)
-	mgr.StartWorker("connect manager", p.connectMgr)
+	mgr.Go("listen manager", p.listenMgr)
+	mgr.Go("connect manager", p.connectMgr)
 
 	return nil
 }

@@ -56,7 +56,7 @@ func newListenerBase(
 }
 
 func (ln *ListenerBase) startWorkers() {
-	ln.peering.mgr.StartWorker("listener", ln.listenWorker)
+	ln.peering.mgr.Go("listener", ln.listenWorker)
 }
 
 // ID returns the listener ID.
@@ -122,6 +122,6 @@ func (ln *ListenerBase) listenWorker(w *mgr.WorkerCtx) error {
 			false,
 			ln.peering,
 		)
-		ln.peering.mgr.StartWorker("setup link", newLink.setupWorker)
+		ln.peering.mgr.Go("setup link", newLink.setupWorker)
 	}
 }

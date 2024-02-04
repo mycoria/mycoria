@@ -97,7 +97,7 @@ func New(instance instance, tunDevice *tun.Device) (*NetStack, error) {
 
 // Start starts the API stack.
 func (ns *NetStack) Start(m *mgr.Manager) error {
-	m.StartWorker("response packet handler", ns.handleResponsePackets)
+	m.Go("response packet handler", ns.handleResponsePackets)
 
 	return nil
 }
