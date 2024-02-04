@@ -29,6 +29,10 @@ func (scw *StatusCodeWriter) Header() http.Header {
 
 // Write wraps the original Write method.
 func (scw *StatusCodeWriter) Write(b []byte) (int, error) {
+	if scw.Status == 0 {
+		scw.Status = 200
+	}
+
 	return scw.ResponseWriter.Write(b)
 }
 

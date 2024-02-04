@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/mycoria/mycoria/api/httpapi"
 	"github.com/mycoria/mycoria/api/netstack"
 	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/frame"
@@ -47,9 +48,11 @@ type instance interface {
 	Version() string
 	Config() *config.Config
 	Identity() *m.Address
-	State() *state.State
 	FrameBuilder() *frame.Builder
+
+	State() *state.State
 	NetStack() *netstack.NetStack
+	API() *httpapi.API
 
 	TunDevice() *tun.Device
 	Switch() *switchr.Switch
@@ -109,6 +112,8 @@ func New(instance instance, routerConfig Config) (*Router, error) {
 		return nil, err
 	}
 
+	r.registerAPI()
+
 	return r, nil
 }
 
@@ -116,16 +121,16 @@ func New(instance instance, routerConfig Config) (*Router, error) {
 func (r *Router) Start(mgr *mgr.Manager) error {
 	r.mgr = mgr
 
-	mgr.StartWorker("announce router", r.announceWorker)
-	mgr.StartWorker("keep-alive peers", r.keepAliveWorker)
+	mgr.Go("announce router", r.announceWorker)
+	mgr.Go("keep-alive peers", r.keepAliveWorker)
 
-	mgr.StartWorker("clean conn states", r.cleanConnStatesWorker)
-	mgr.StartWorker("clean ping handlers", r.cleanPingHandlersWorker)
-	mgr.StartWorker("clean routing table", r.cleanRoutingTableWorker)
+	mgr.Go("clean conn states", r.cleanConnStatesWorker)
+	mgr.Go("clean ping handlers", r.cleanPingHandlersWorker)
+	mgr.Go("clean routing table", r.cleanRoutingTableWorker)
 
 	for i := 0; i < runtime.NumCPU(); i++ {
-		mgr.StartWorker("router", r.frameHandler)
-		mgr.StartWorker("tun handler", r.handleTun)
+		mgr.Go("router", r.frameHandler)
+		mgr.Go("tun handler", r.handleTun)
 	}
 
 	return nil
