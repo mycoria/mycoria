@@ -70,4 +70,6 @@ type ServiceConfig struct { //nolint:maligned
 type System struct {
 	TunName   string `json:"tunName,omitempty"   yaml:"tunName,omitempty"`
 	StatePath string `json:"statePath,omitempty" yaml:"statePath,omitempty"`
+
+	DisableChromiumWorkaround bool `json:"disableChromiumWorkaround,omitempty" yaml:"disableChromiumWorkaround,omitempty"`
 }
