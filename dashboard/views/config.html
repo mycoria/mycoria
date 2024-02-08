@@ -1,0 +1,10 @@
+{{ template "base.html" . }}
+
+{{ define "title" }}Mycoria Config{{ end }}
+
+{{ define "content" }}
+<section class="section">
+  <h1 class="title">Config</h1>
+  <pre>{{ .Page.ConfigStore }}</pre>
+</section>
+{{ end }}

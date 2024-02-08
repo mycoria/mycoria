@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/mitchellh/copystructure"
 	"github.com/mycoria/mycoria/m"
 )
 
@@ -72,4 +73,13 @@ type System struct {
 	StatePath string `json:"statePath,omitempty" yaml:"statePath,omitempty"`
 
 	DisableChromiumWorkaround bool `json:"disableChromiumWorkaround,omitempty" yaml:"disableChromiumWorkaround,omitempty"`
+}
+
+// Clone returns a full copy the store.
+func (s Store) Clone() (Store, error) {
+	copied, err := copystructure.Copy(s)
+	if err != nil {
+		return Store{}, err
+	}
+	return copied.(Store), nil //nolint:forcetypeassert
 }

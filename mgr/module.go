@@ -24,8 +24,8 @@ type groupModule struct {
 
 // Module is an manage-able instance of some component.
 type Module interface {
-	Start(*Manager) error
-	Stop(*Manager) error
+	Start(mgr *Manager) error
+	Stop(mgr *Manager) error
 }
 
 // NewGroup returns a new group of modules.

@@ -1,0 +1,10 @@
+{{ template "base.html" . }}
+
+{{ define "title" }}Mycoria Routing Table{{ end }}
+
+{{ define "content" }}
+<section class="section">
+  <h1 class="title">Routing Table</h1>
+  <pre>{{ .Page.Table }}</pre>
+</section>
+{{ end }}

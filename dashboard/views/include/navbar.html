@@ -1,0 +1,34 @@
+<nav class="navbar is-dark" role="navigation" aria-label="main navigation">
+  <div class="navbar-brand">
+    <a class="navbar-item is-primary" href="/">
+      <h1 class="has-text-weight-bold">
+        Mycoria Router
+      </h1>
+    </a>
+  </div>
+
+  <div class="navbar-menu is-active">
+    <div class="navbar-start">
+      <a class="navbar-item" href="/discover">
+        Discover
+      </a>
+      
+      <a class="navbar-item" href="/mappings">
+        Domain Mappings
+      </a>
+      
+      <a class="navbar-item" href="/table">
+        Routing Table
+      </a>
+
+      <a class="navbar-item" href="/config">
+        Config
+      </a>
+    </div>
+
+    <div class="navbar-end pr-2 has-text-grey-light">
+      Router: {{ .RouterID }}<br>
+      Version: {{ .Version }} &nbsp;&nbsp;&nbsp; Uptime: {{ .Uptime.Round 1000000000 }}
+    </div>
+  </div>
+</nav>

@@ -1,0 +1,23 @@
+Mycoria Router
+ID: {{ .RouterID }}
+
+Version
+
+Version: {{ .Version }}
+From: {{ .Page.BuildInfo.Path }}
+Commit: {{ index .Page.BuildSettings "vcs.revision" }} @{{ index .Page.BuildSettings "vcs.time" }} dirty={{ index .Page.BuildSettings "vcs.modified" }}
+Go: {{ .Page.BuildInfo.GoVersion }} {{ .Page.BuildSettings.GOOS }} {{ .Page.BuildSettings.GOARCH }}
+
+Environment
+
+Uptime: {{ .Uptime.Round 1000000000 }}
+Started: {{ .Started.Round 1000000000 }}
+Host CPUs: {{ .Page.NumCPU }}
+Goroutines: {{ .Page.NumGoroutine }}
+Memory Usage: {{ .Page.MemStats.HeapAlloc | filesizeformat }}
+
+Build Info
+
+{{ range $key, $value := .Page.BuildSettings -}}
+{{ $key }}: {{ $value }}
+{{ end }}

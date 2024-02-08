@@ -111,8 +111,6 @@ func New(instance instance, routerConfig Config) (*Router, error) {
 		return nil, err
 	}
 
-	r.registerAPI()
-
 	return r, nil
 }
 
@@ -136,7 +134,7 @@ func (r *Router) Start(mgr *mgr.Manager) error {
 }
 
 // Stop stops the router.
-func (r *Router) Stop(m *mgr.Manager) error {
+func (r *Router) Stop(mgr *mgr.Manager) error {
 	return nil
 }
 

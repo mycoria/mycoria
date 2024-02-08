@@ -9,6 +9,7 @@ import (
 	"github.com/mycoria/mycoria/api/httpapi"
 	"github.com/mycoria/mycoria/api/netstack"
 	"github.com/mycoria/mycoria/config"
+	"github.com/mycoria/mycoria/dashboard"
 	"github.com/mycoria/mycoria/frame"
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/mgr"
@@ -116,6 +117,12 @@ func New(version string, c *config.Config) (*Instance, error) {
 	// Add protocols.
 	instance.peering.AddProtocol("tcp", peering.ProtocolTCP)
 
+	// Create dashboard.
+	dashboard, err := dashboard.New(instance)
+	if err != nil {
+		return nil, fmt.Errorf("create dashboard: %w", err)
+	}
+
 	// Add all modules to instance group.
 	instance.Group = mgr.NewGroup(
 		instance.state,
@@ -127,6 +134,8 @@ func New(version string, c *config.Config) (*Instance, error) {
 		instance.peering,
 		instance.switchr,
 		instance.router,
+
+		dashboard,
 	)
 
 	return instance, nil

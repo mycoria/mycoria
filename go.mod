@@ -1,6 +1,6 @@
 module github.com/mycoria/mycoria
 
-go 1.21.2
+go 1.22.0
 
 // gVisor uses special tags for go mod compatibility.
 // Tags are here: https://github.com/google/gvisor/tags
@@ -16,7 +16,7 @@ require gvisor.dev/gvisor v0.0.0-20240131012156-7a79184a819b
 require (
 	github.com/brianvoe/gofakeit v3.18.0+incompatible
 	github.com/fxamacker/cbor/v2 v2.5.0
-	github.com/godbus/dbus/v5 v5.1.0
+	github.com/leekchan/gtf v0.0.0-20190214083521-5fba33c5b00b
 	github.com/lmittmann/tint v1.0.4
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mdlayher/ndp v1.0.1

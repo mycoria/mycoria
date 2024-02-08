@@ -1,0 +1,197 @@
+package dashboard
+
+import (
+	"embed"
+	"fmt"
+	"html/template"
+	"io/fs"
+	"net/http"
+	"net/netip"
+	"os"
+	"path/filepath"
+	"strings"
+	txtTemplate "text/template"
+	"time"
+
+	"github.com/leekchan/gtf"
+
+	"github.com/mycoria/mycoria/api/httpapi"
+	"github.com/mycoria/mycoria/config"
+	"github.com/mycoria/mycoria/m"
+	"github.com/mycoria/mycoria/mgr"
+	"github.com/mycoria/mycoria/router"
+	"github.com/mycoria/mycoria/state"
+)
+
+var (
+	//go:embed assets
+	assetsFS embed.FS
+
+	//go:embed views
+	templateFS embed.FS
+)
+
+// Dashboard is a dashboard user interface.
+type Dashboard struct {
+	instance instance
+	mgr      *mgr.Manager
+
+	assets http.FileSystem
+
+	htmlTemplates map[string]*template.Template
+	txtTemplates  *txtTemplate.Template
+}
+
+// instance is an interface subset of inst.Ance.
+type instance interface {
+	Version() string
+	Config() *config.Config
+	Identity() *m.Address
+	State() *state.State
+	API() *httpapi.API
+	Router() *router.Router
+}
+
+// New adds a dashboard to the given instance.
+func New(instance instance) (*Dashboard, error) {
+	d := &Dashboard{
+		instance: instance,
+		assets:   http.FS(assetsFS),
+	}
+	d.registerRoutes()
+
+	err := d.loadTemplates(templateFS)
+	if err != nil {
+		return nil, fmt.Errorf("load templates: %w", err)
+	}
+
+	return d, nil
+}
+
+// Start starts the router.
+func (d *Dashboard) Start(mgr *mgr.Manager) error {
+	d.mgr = mgr
+	return nil
+}
+
+// Stop stops the router.
+func (d *Dashboard) Stop(mgr *mgr.Manager) error {
+	return nil
+}
+
+func (d *Dashboard) registerRoutes() {
+	d.instance.API().Handle("/assets/", http.FileServer(http.FS(assetsFS)))
+
+	d.registerViews()
+}
+
+func (d *Dashboard) loadTemplates(baseFS fs.FS) error {
+	// Load html templates.
+	includeTemplates, err := template.New("").Funcs(gtf.GtfFuncMap).ParseFS(baseFS, "views/include/*.html")
+	if err != nil {
+		return fmt.Errorf("load include templates: %w", err)
+	}
+	// Parse every page template together with the includes.
+	views, err := fs.ReadDir(baseFS, "views")
+	if err != nil {
+		return fmt.Errorf("load page names: %w", err)
+	}
+	d.htmlTemplates = make(map[string]*template.Template)
+	for _, view := range views {
+		if view.IsDir() || !strings.HasSuffix(view.Name(), ".html") {
+			continue
+		}
+		cloned, err := includeTemplates.Clone()
+		if err != nil {
+			return fmt.Errorf("clone include templates: %w", err)
+		}
+		pageTmpl, err := cloned.ParseFS(baseFS, filepath.Join("views", view.Name()))
+		if err != nil {
+			return fmt.Errorf("parse page %s template: %w", view.Name(), err)
+		}
+		d.htmlTemplates[view.Name()] = pageTmpl
+	}
+
+	// Load txt templates.
+	d.txtTemplates, err = txtTemplate.New("").Funcs(gtf.GtfFuncMap).ParseFS(baseFS, "views/*.txt")
+	if err != nil {
+		return fmt.Errorf("load txt templates: %w", err)
+	}
+
+	return nil
+}
+
+type renderingData struct {
+	RouterID netip.Addr
+	Version  string
+	Started  time.Time
+	Uptime   time.Duration
+	Page     any
+}
+
+var (
+	html  = "html"
+	plain = "plain"
+)
+
+func (d *Dashboard) render(w http.ResponseWriter, r *http.Request, templateName string, data any) {
+	var err error
+
+	// Build render data set.
+	renderData := &renderingData{
+		RouterID: d.instance.Identity().IP,
+		Version:  d.instance.Version(),
+		Started:  d.instance.Config().Started(),
+		Uptime:   d.instance.Config().Uptime(),
+		Page:     data,
+	}
+
+	// Reload templates in dev mode.
+	if d.instance.Config().DevMode() {
+		// TODO: Not concurrency safe.
+		err := d.loadTemplates(os.DirFS("../../dashboard"))
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to load templates: %s", err), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Find out which content type to use.
+	contentType := html
+	accept := r.Header.Get("Accept")
+	userAgent := strings.ToLower(r.Header.Get("User-Agent"))
+	switch {
+	case strings.Contains(accept, "text/html"):
+		contentType = html
+	case strings.Contains(accept, "text/plain"):
+		contentType = plain
+	case strings.Contains(userAgent, "curl"):
+		contentType = plain
+	}
+	w.Header().Set("Content-Type", "text/"+contentType+"; charset=utf-8")
+
+	// Set content type and render.
+	switch contentType {
+	case plain:
+		err = d.txtTemplates.ExecuteTemplate(w, templateName+".txt", renderData)
+	case html:
+		fallthrough
+	default:
+		templateName += ".html"
+		tmpl, ok := d.htmlTemplates[templateName]
+		if ok {
+			err = tmpl.ExecuteTemplate(w, templateName, renderData)
+		} else {
+			err = fmt.Errorf("template %q not found", templateName)
+		}
+	}
+
+	// Log render error.
+	if err != nil {
+		d.mgr.Error(
+			"failed to render",
+			"template", templateName,
+			"err", err,
+		)
+	}
+}
