@@ -131,7 +131,6 @@ func (api *API) handleRequest(wkr *mgr.WorkerCtx, w http.ResponseWriter, r *http
 	hdr.Set(
 		"Content-Security-Policy",
 		"default-src 'self'; "+
-			"connect-src 'self'; "+
 			"style-src 'self' 'unsafe-inline'; "+
 			"img-src 'self' data: blob:",
 	)

@@ -43,8 +43,7 @@ func New(instance instance, ln net.PacketConn) (*Server, error) {
 		instance:      instance,
 		dnsServerBind: ln,
 		apiNames: []string{
-			"status", // Human interface.
-			"api",    // Computer interface.
+			"router", // Main UI domain.
 			"open",   // For TOFU Names.
 		},
 	}
@@ -117,9 +116,8 @@ func (srv *Server) handleRequest(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dn
 
 	// Check query type.
 	switch q.Qtype {
-	case dns.TypeA, dns.TypeAAAA, dns.TypeANY:
-		// Allow A, AAAA, ANY.
-		// But we always reply with AAAA.
+	case dns.TypeA, dns.TypeAAAA, dns.TypeSVCB, dns.TypeHTTPS, dns.TypeANY:
+		// Handle A, AAAA, SVCB, HTTPS and ANY.
 	default:
 		// Ignore other types.
 		replyNotFound(wkr, w, r)
@@ -149,33 +147,33 @@ func (srv *Server) handleRequest(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dn
 
 	// Source 0: API
 	if slices.Contains[[]string, string](srv.apiNames, mycoName) {
-		replyAAAA(wkr, w, r, config.DefaultAPIAddress)
+		reply(wkr, w, r, config.DefaultAPIAddress)
 		return
 	}
 
 	// Source 1: config.resolve
 	resolveToIP, ok := srv.instance.Config().Resolve[mycoName]
 	if ok {
-		replyAAAA(wkr, w, r, resolveToIP)
+		reply(wkr, w, r, resolveToIP)
 		return
 	}
 
 	// Source 2: config.friends
 	friend, ok := srv.instance.Config().FriendsByName[mycoName]
 	if ok {
-		replyAAAA(wkr, w, r, friend.IP)
+		reply(wkr, w, r, friend.IP)
 		return
 	}
 
 	replyNotFound(wkr, w, r)
 }
 
-func replyAAAA(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dns.Msg, ip netip.Addr) {
+func reply(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dns.Msg, ip netip.Addr) {
 	reply := new(dns.Msg)
 
-	// Create answer record.
+	// Create answers.
 	q := r.Question[0]
-	rr, err := dns.NewRR(q.Name + " 1 IN AAAA " + ip.String())
+	aaaa, err := dns.NewRR(q.Name + " 1 IN AAAA " + ip.String())
 	if err != nil {
 		wkr.Error(
 			"failed to create AAAA answer record",
@@ -185,8 +183,35 @@ func replyAAAA(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dns.Msg, ip netip.Ad
 		)
 		return
 	}
+	svcb, err := dns.NewRR(q.Name + " 1 IN SVCB 1 . ipv6hint=" + ip.String())
+	if err != nil {
+		wkr.Error(
+			"failed to create SVCB answer record",
+			"name", q.Name,
+			"answer", ip.String(),
+			"err", err,
+		)
+		return
+	}
 
-	reply.Answer = []dns.RR{rr}
+	// Assign answers to sections.
+	switch q.Qtype {
+	case dns.TypeAAAA:
+		reply.Answer = []dns.RR{aaaa}
+		reply.Extra = []dns.RR{svcb}
+
+	case dns.TypeSVCB:
+		reply.Answer = []dns.RR{svcb}
+		reply.Extra = []dns.RR{aaaa}
+
+	case dns.TypeANY:
+		reply.Answer = []dns.RR{aaaa, svcb}
+
+	default:
+		reply.Extra = []dns.RR{aaaa, svcb}
+	}
+
+	// Finalize and reply.
 	reply.SetRcode(r, dns.RcodeSuccess)
 	replyMsg(wkr, w, reply)
 }
