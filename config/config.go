@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/mycoria/mycoria/m"
 )
@@ -29,6 +30,9 @@ type Config struct {
 
 	tunMTU    atomic.Int32
 	frameSize atomic.Int32
+
+	devMode atomic.Bool
+	started time.Time
 }
 
 // Friend is a trusted router in the network.
@@ -85,6 +89,7 @@ func (s Store) parse(test bool) (*Config, error) { //nolint:maintidx // Function
 	c := &Config{
 		Store:    s,
 		inPolicy: make(map[string]map[netip.Addr]struct{}),
+		started:  time.Now(),
 	}
 	c.SetTunMTU(DefaultTunMTU)
 	c.SetOverlayFrameSize(DefaultFrameSize)
@@ -418,4 +423,26 @@ func (c *Config) GetRouterInfo() *m.RouterInfo {
 	// Set and return.
 	info.PublicServices = srv
 	return info
+}
+
+// DevMode returns if the development mode is enabled.
+func (c *Config) DevMode() bool {
+	return c.devMode.Load()
+}
+
+// SetDevMode sets the development mode.
+func (c *Config) SetDevMode(mode bool) {
+	c.devMode.Store(mode)
+}
+
+// Started returns the time when the router was started.
+// Measured by when the config was created.
+func (c *Config) Started() time.Time {
+	return c.started
+}
+
+// Uptime returns the time since the router was started.
+// Measured by when the config was created.
+func (c *Config) Uptime() time.Duration {
+	return time.Since(c.started)
 }

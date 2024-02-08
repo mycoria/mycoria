@@ -37,16 +37,28 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Configure logging.
+	// Modify config.
+	c.SetDevMode(*devMode)
+
+	// Get log level.
+	level := slog.LevelInfo
+	if logLevel != nil && *logLevel != "" {
+		// TODO: Is this really the best way to do this?
+		if err := level.UnmarshalText([]byte(*logLevel)); err != nil {
+			return fmt.Errorf("invalid log level: %w", err)
+		}
+	}
+	// Setup logging.
 	logOutput := os.Stdout
 	slog.SetDefault(slog.New(
 		tint.NewHandler(os.Stdout, &tint.Options{
 			AddSource:  true,
-			Level:      slog.LevelDebug,
+			Level:      level,
 			TimeFormat: time.DateTime,
 			NoColor:    !isatty.IsTerminal(logOutput.Fd()),
 		}),
 	))
+	slog.SetLogLoggerLevel(level)
 
 	// Setup up everything.
 	myco, err := mycoria.New(Version, c)

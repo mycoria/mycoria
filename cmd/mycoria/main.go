@@ -16,6 +16,8 @@ var (
 	}
 
 	configFile = pflag.String("config", "", "set config file")
+	logLevel   = pflag.String("log", "", "set log level")
+	devMode    = pflag.Bool("devmode", false, "enable development mode")
 )
 
 func main() {
