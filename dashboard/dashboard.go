@@ -36,7 +36,8 @@ type Dashboard struct {
 	instance instance
 	mgr      *mgr.Manager
 
-	assets http.FileSystem
+	assetServer http.Handler
+	assetsEtag  string
 
 	htmlTemplates map[string]*template.Template
 	txtTemplates  *txtTemplate.Template
@@ -55,8 +56,9 @@ type instance interface {
 // New adds a dashboard to the given instance.
 func New(instance instance) (*Dashboard, error) {
 	d := &Dashboard{
-		instance: instance,
-		assets:   http.FS(assetsFS),
+		instance:    instance,
+		assetServer: http.FileServerFS(assetsFS),
+		assetsEtag:  fmt.Sprintf(`"%x"`, instance.Config().Started().UnixNano()),
 	}
 	d.registerRoutes()
 
@@ -80,9 +82,20 @@ func (d *Dashboard) Stop(mgr *mgr.Manager) error {
 }
 
 func (d *Dashboard) registerRoutes() {
-	d.instance.API().Handle("/assets/", http.FileServer(http.FS(assetsFS)))
+	d.instance.API().HandleFunc("/assets/", d.serveAssets)
 
 	d.registerViews()
+}
+
+func (d *Dashboard) serveAssets(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Cache-Control", "public, max-age=10")
+	w.Header().Add("Etag", d.assetsEtag)
+	if r.Header.Get("If-None-Match") == d.assetsEtag {
+		http.Error(w, "", http.StatusNotModified)
+		return
+	}
+
+	d.assetServer.ServeHTTP(w, r)
 }
 
 func (d *Dashboard) loadTemplates(baseFS fs.FS) error {
