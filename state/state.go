@@ -9,13 +9,14 @@ import (
 
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/mgr"
+	"github.com/mycoria/mycoria/storage"
 )
 
 // State manages and stores states.
 type State struct {
 	mgr *mgr.Manager
 
-	storage        Storage
+	storage        storage.Storage
 	maxStorageSize int
 
 	sessions     map[netip.Addr]*Session
@@ -32,21 +33,21 @@ type instance interface {
 const minStorageSize = 10_000
 
 // New returns a new state manager.
-func New(instance instance, storage Storage) *State {
+func New(instance instance, store storage.Storage) *State {
 	// Fallback to memory storage.
-	if storage == nil {
-		storage = NewMemStorage()
+	if store == nil {
+		store = storage.NewMemStorage()
 	}
 
 	// Allow for 100x storage growth.
-	maxStorageSize := storage.Size() * 100
+	maxStorageSize := store.Size() * 100
 	// Raise to minimum.
 	if maxStorageSize < minStorageSize {
 		maxStorageSize = minStorageSize
 	}
 
 	return &State{
-		storage:        storage,
+		storage:        store,
 		maxStorageSize: maxStorageSize,
 
 		sessions: make(map[netip.Addr]*Session),
@@ -67,20 +68,23 @@ func (state *State) Stop(mgr *mgr.Manager) error {
 	mgr.Cancel()
 	// Wait for all workers.
 	mgr.WaitForWorkers(10 * time.Second)
-	// Shutdown storage.
-	return state.storage.Stop()
+
+	return nil
 }
 
 // AddRouter adds a router to the state manager.
 func (state *State) AddRouter(address *m.PublicAddress) error {
 	// Check if we already have that router.
-	info := state.storage.Load(address.IP)
+	info, err := state.storage.GetRouter(address.IP)
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
+		return fmt.Errorf("check existing entry: %w", err)
+	}
 	if info != nil {
 		return nil
 	}
 
 	// Otherwise, create a now stored info.
-	err := state.storage.Save(&StoredInfo{
+	err = state.storage.SaveRouter(&storage.StoredRouter{
 		Address:   address,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -99,26 +103,26 @@ func (state *State) AddRouter(address *m.PublicAddress) error {
 }
 
 // QueryRouters query the router storage.
-func (state *State) QueryRouters(q *StorageQuery) error {
-	return state.storage.Query(q)
+func (state *State) QueryRouters(q *storage.RouterQuery) error {
+	return state.storage.QueryRouters(q)
 }
 
 // QueryNearestRouters queries the nearest routers to the given IP.
-func (state *State) QueryNearestRouters(ip netip.Addr, max int) ([]*StoredInfo, error) {
-	q := NewQuery(
-		func(a *StoredInfo) bool {
+func (state *State) QueryNearestRouters(ip netip.Addr, max int) ([]*storage.StoredRouter, error) {
+	q := storage.NewRouterQuery(
+		func(a *storage.StoredRouter) bool {
 			return a.PublicInfo != nil &&
 				len(a.PublicInfo.IANA) > 0 &&
 				len(a.PublicInfo.Listeners) > 0
 		},
-		func(a, b *StoredInfo) int {
+		func(a, b *storage.StoredRouter) int {
 			aDist := m.IPDistance(ip, a.Address.IP)
 			bDist := m.IPDistance(ip, b.Address.IP)
 			return aDist.Compare(bDist)
 		},
 		max,
 	)
-	if err := state.storage.Query(q); err != nil {
+	if err := state.storage.QueryRouters(q); err != nil {
 		return nil, err
 	}
 
@@ -128,24 +132,35 @@ func (state *State) QueryNearestRouters(ip netip.Addr, max int) ([]*StoredInfo, 
 // AddPublicRouterInfo adds the public router info.
 func (state *State) AddPublicRouterInfo(id netip.Addr, info *m.RouterInfo) error {
 	// Check if we already have that router.
-	stored := state.storage.Load(id)
+	stored, err := state.storage.GetRouter(id)
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
+		return fmt.Errorf("get stored router: %w", err)
+	}
 	if stored == nil {
 		return errors.New("router unknown")
 	}
+	firstInfo := stored.PublicInfo == nil
 
 	// Add to storage and save.
 	stored.PublicInfo = info
 	stored.UpdatedAt = time.Now()
-	err := state.storage.Save(stored)
+	err = state.storage.SaveRouter(stored)
 	if err != nil {
 		return fmt.Errorf("save to storage: %w", err)
 	}
 
 	if state.mgr != nil {
-		state.mgr.Info(
-			"router info updated",
-			"router", id,
-		)
+		if firstInfo {
+			state.mgr.Info(
+				"router info added",
+				"router", id,
+			)
+		} else {
+			state.mgr.Debug(
+				"router info updated",
+				"router", id,
+			)
+		}
 	}
 	return nil
 }
@@ -177,9 +192,10 @@ func (state *State) GetSession(ip netip.Addr) *Session {
 	}
 
 	// Otherwise, create a new one.
-	info := state.storage.Load(ip)
-	if info == nil {
+	info, err := state.storage.GetRouter(ip)
+	if err != nil {
 		// Cannot create session without router info.
+		// TODO: What to do if the storage is broken?
 		return nil
 	}
 
@@ -210,6 +226,7 @@ func (state *State) sessionCleanerWorker(w *mgr.WorkerCtx) error {
 			state.cleanSessions()
 
 			// Clean storage every 10 ticks.
+			// TODO: Clean storage in separate worker.
 			if tick%10 == 0 {
 				state.cleanStorage()
 			}

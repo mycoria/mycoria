@@ -13,12 +13,14 @@ import (
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/mgr"
 	"github.com/mycoria/mycoria/state"
+	"github.com/mycoria/mycoria/storage"
 	"github.com/mycoria/mycoria/tun"
 )
 
 // Server is DNS Server.
 type Server struct {
 	instance instance
+	mappings storage.DomainMappingStorage
 	mgr      *mgr.Manager
 
 	dnsServer     *dns.Server
@@ -37,10 +39,11 @@ type instance interface {
 }
 
 // New returns a new HTTP API.
-func New(instance instance, ln net.PacketConn) (*Server, error) {
+func New(instance instance, ln net.PacketConn, mappings storage.DomainMappingStorage) (*Server, error) {
 	// Create HTTP server.
 	srv := &Server{
 		instance:      instance,
+		mappings:      mappings,
 		dnsServerBind: ln,
 		apiNames: []string{
 			"router", // Main UI domain.
@@ -163,6 +166,14 @@ func (srv *Server) handleRequest(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dn
 	if ok {
 		reply(wkr, w, r, friend.IP)
 		return
+	}
+
+	// Source 3: domain mappings
+	if srv.mappings != nil {
+		resolveToIP, err := srv.mappings.GetMapping(mycoName + "." + config.DefaultTLD)
+		if err == nil {
+			reply(wkr, w, r, resolveToIP)
+		}
 	}
 
 	replyNotFound(wkr, w, r)

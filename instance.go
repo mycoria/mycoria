@@ -16,6 +16,7 @@ import (
 	"github.com/mycoria/mycoria/peering"
 	"github.com/mycoria/mycoria/router"
 	"github.com/mycoria/mycoria/state"
+	"github.com/mycoria/mycoria/storage"
 	"github.com/mycoria/mycoria/switchr"
 	"github.com/mycoria/mycoria/tun"
 )
@@ -59,20 +60,20 @@ func New(version string, c *config.Config) (*Instance, error) {
 	instance.frameBuilder.SetFrameMargins(peering.FrameOffset, peering.FrameOverhead)
 
 	// Load state and create state manager.
-	var stateStorage state.Storage
+	var dataStore storage.Storage
 	switch {
 	case c.System.StatePath == "":
-		stateStorage = state.NewMemStorage()
+		dataStore = storage.NewMemStorage()
 	case strings.HasSuffix(c.System.StatePath, ".json"):
 		var err error
-		stateStorage, err = state.NewJSONFileStorage(c.System.StatePath)
+		dataStore, err = storage.NewJSONFileStorage(c.System.StatePath)
 		if err != nil {
 			return nil, fmt.Errorf("load state: %w", err)
 		}
 	default:
 		return nil, errors.New("unknown state file type")
 	}
-	instance.state = state.New(instance, stateStorage)
+	instance.state = state.New(instance, dataStore)
 
 	// Create tunnel interface and add router IP.
 	instance.tunDevice, err = tun.Create(instance)
@@ -97,7 +98,7 @@ func New(version string, c *config.Config) (*Instance, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listen on API netstack: %w", err)
 	}
-	instance.dns, err = dns.New(instance, packetConn)
+	instance.dns, err = dns.New(instance, packetConn, dataStore)
 	if err != nil {
 		return nil, fmt.Errorf("create local http API: %w", err)
 	}
@@ -125,6 +126,8 @@ func New(version string, c *config.Config) (*Instance, error) {
 
 	// Add all modules to instance group.
 	instance.Group = mgr.NewGroup(
+		dataStore,
+
 		instance.state,
 		instance.tunDevice,
 		instance.netstack,

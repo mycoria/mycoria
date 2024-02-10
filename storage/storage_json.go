@@ -1,4 +1,4 @@
-package state
+package storage
 
 import (
 	"encoding/json"
@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
-	"time"
+
+	"github.com/mycoria/mycoria/mgr"
 )
 
 // JSONFileStorage is a simple storage implementation using a single json file
@@ -19,7 +20,8 @@ type JSONFileStorage struct {
 
 // JSONStorageFormat is the format in which the JSONFileStorage stores the state.
 type JSONStorageFormat struct {
-	Routers map[netip.Addr]*StoredInfo `json:"routers,omitempty" yaml:"routers,omitempty"`
+	Routers  map[netip.Addr]*StoredRouter `json:"routers,omitempty"  yaml:"routers,omitempty"`
+	Mappings map[string]StoredMapping     `json:"mappings,omitempty" yaml:"mappings,omitempty"`
 }
 
 // NewJSONFileStorage loads the json file at the given location and returns a new storage.
@@ -35,7 +37,8 @@ func NewJSONFileStorage(filename string) (*JSONFileStorage, error) {
 		if err := json.Unmarshal(data, &stored); err != nil {
 			return nil, fmt.Errorf("unmarshal json: %w", err)
 		}
-		s.entries = stored.Routers
+		s.routers = stored.Routers
+		s.mappings = stored.Mappings
 
 	case errors.Is(err, os.ErrNotExist):
 		// File does not exist, start empty.
@@ -44,43 +47,29 @@ func NewJSONFileStorage(filename string) (*JSONFileStorage, error) {
 		return nil, fmt.Errorf("read file %q: %w", s.filename, err)
 	}
 
-	// Ensure s.entries always has a map.
-	if s.entries == nil {
-		s.entries = make(map[netip.Addr]*StoredInfo)
+	// Ensure maps are initialized.
+	if s.routers == nil {
+		s.routers = make(map[netip.Addr]*StoredRouter)
+	}
+	if s.mappings == nil {
+		s.mappings = make(map[string]StoredMapping)
 	}
 
 	return s, nil
 }
 
 // Stop writes to storage to file.
-func (s *JSONFileStorage) Stop() error {
+func (s *JSONFileStorage) Stop(mgr *mgr.Manager) error {
 	data, err := json.Marshal(&JSONStorageFormat{
-		Routers: s.entries,
+		Routers:  s.routers,
+		Mappings: s.mappings,
 	})
 	if err != nil {
-		return fmt.Errorf("marshal json: %w", err)
+		return fmt.Errorf("failed to marshal json storage: %w", err)
 	}
 	err = os.WriteFile(s.filename, data, 0o0644) //nolint:gosec // no secrets
 	if err != nil {
-		return fmt.Errorf("write file %q: %w", s.filename, err)
+		return fmt.Errorf("failed to write json storage to %s: %w", s.filename, err)
 	}
-
 	return nil
-}
-
-// Load returns an entry from the storage.
-func (s *JSONFileStorage) Load(ip netip.Addr) *StoredInfo {
-	s.entriesLock.RLock()
-	defer s.entriesLock.RUnlock()
-
-	// Load entry, return nil if it does not exist.
-	info := s.entries[ip]
-	if info == nil {
-		return nil
-	}
-
-	// Update entry and return it.
-	now := time.Now()
-	info.UsedAt = &now
-	return info
 }
