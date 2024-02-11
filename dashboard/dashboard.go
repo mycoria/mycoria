@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"crypto/rand"
 	"embed"
 	"fmt"
 	"html/template"
@@ -15,12 +16,14 @@ import (
 
 	"github.com/leekchan/gtf"
 
+	"github.com/mycoria/mycoria/api/dns"
 	"github.com/mycoria/mycoria/api/httpapi"
 	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/mgr"
 	"github.com/mycoria/mycoria/router"
 	"github.com/mycoria/mycoria/state"
+	"github.com/mycoria/mycoria/storage"
 )
 
 var (
@@ -39,6 +42,8 @@ type Dashboard struct {
 	assetServer http.Handler
 	assetsEtag  string
 
+	tokenSecret []byte
+
 	htmlTemplates map[string]*template.Template
 	txtTemplates  *txtTemplate.Template
 }
@@ -48,8 +53,10 @@ type instance interface {
 	Version() string
 	Config() *config.Config
 	Identity() *m.Address
+	Storage() storage.Storage
 	State() *state.State
 	API() *httpapi.API
+	DNS() *dns.Server
 	Router() *router.Router
 }
 
@@ -62,7 +69,15 @@ func New(instance instance) (*Dashboard, error) {
 	}
 	d.registerRoutes()
 
-	err := d.loadTemplates(templateFS)
+	// Generate token secret.
+	d.tokenSecret = make([]byte, tokenSecretSize)
+	_, err := rand.Read(d.tokenSecret)
+	if err != nil {
+		return nil, fmt.Errorf("generate token secret: %w", err)
+	}
+
+	// Load templates from embedded data.
+	err = d.loadTemplates(templateFS)
 	if err != nil {
 		return nil, fmt.Errorf("load templates: %w", err)
 	}

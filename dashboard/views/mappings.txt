@@ -1,2 +1,5 @@
 Domain Mappings
 
+{{ range .Page.Mappings -}}
+{{ .Domain }} {{ .Router }}
+{{ end }}

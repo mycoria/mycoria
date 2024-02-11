@@ -5,8 +5,56 @@
 {{ define "content" }}
 <section class="section">
   <h1 class="title">Mappings</h1>
-  <p>
-    mappings...
-  </p>
+
+  <form action="/open" target="_blank" method="GET">
+    <div class="block is-flex is-align-content-center my-4">
+      <div class="is-size-5">
+        Add New:
+      </div>
+      <div class="field has-addons px-3">
+        <p class="control">
+          <input name="domain" class="input" type="text" placeholder="Domain">
+        </p>
+        <p class="control">
+          <a class="button is-static">
+            .myco
+          </a>
+        </p>
+      </div>
+      <div class="field is-grouped">
+        <p class="control">
+          <input name="router" class="input" type="text" placeholder="Mycoria Router Address">
+        </p>  
+        <p class="control">
+          <button class="button is-primary">Open</button>
+        </p>
+      </div>
+    </div>
+  </form>
+
+  <table class="table is-bordered is-striped is-narrow is-hoverable">
+    <tbody>
+      {{ range .Page.Mappings }}
+      <tr>
+        <th class="has-background-light">
+          <a href="http://{{ .Domain }}/">{{ .Domain }}</a> 
+        </th>
+        <td>{{ .Router }}</td>
+        <td>{{ .Created }}</td>
+        <td>
+          <form action="" method="POST">
+            <input type="hidden" name="nonce" value="{{ $.Page.Nonce }}">
+            <input type="hidden" name="token" value="{{ $.Page.Token }}">
+            <input type="hidden" name="domain" value="{{ .Domain }}">
+            <input type="hidden" name="action" value="delete">
+            <button type="submit" class="button is-small is-white">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </form>
+        </td>
+      </tr>
+      {{ end }}
+    </tbody>
+  </table>  
 </section>
 {{ end }}

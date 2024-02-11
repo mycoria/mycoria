@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -119,9 +120,32 @@ func (api *API) handleRequest(wkr *mgr.WorkerCtx, w http.ResponseWriter, r *http
 		}
 	}()
 
+	// Recover from panic.
+	defer func() {
+		panicVal := recover()
+		if panicVal != nil {
+			// Respond with error.
+			http.Error(w,
+				fmt.Sprintf("internal error: %s", panicVal),
+				http.StatusInternalServerError,
+			)
+
+			// Log error.
+			wkr.Error(
+				"request failed",
+				"method", r.Method,
+				"path", r.URL.Path,
+				"err", fmt.Sprintf("panic: %s", panicVal),
+				"remote", r.RemoteAddr,
+				"time", time.Since(started),
+			)
+			logged = true
+		}
+	}()
+
 	// Add security headers.
 	hdr := w.Header()
-	hdr.Set("Referrer-Policy", "no-referrer")
+	hdr.Set("Referrer-Policy", "same-origin")
 	hdr.Set("X-Content-Type-Options", "nosniff")
 	hdr.Set("X-Frame-Options", "deny")
 	hdr.Set("X-XSS-Protection", "1; mode=block")
@@ -138,10 +162,21 @@ func (api *API) handleRequest(wkr *mgr.WorkerCtx, w http.ResponseWriter, r *http
 	// Check Cross-Origin Requests.
 	origin := r.Header.Get("Origin")
 	if origin != "" {
+		// Check for omitted origin.
+		if origin == "null" {
+			http.Error(w, "Cross-Origin Request Denied: Origin Header Unset.", http.StatusForbidden)
+			wkr.Warn(
+				"request denied: origin header is omitted",
+				"remote", r.RemoteAddr,
+			)
+			logged = true
+			return
+		}
+
 		// Parse origin URL.
 		originURL, err := url.Parse(origin)
 		if err != nil {
-			http.Error(w, "Invalid Origin.", http.StatusForbidden)
+			http.Error(w, "Cross-Origin Request Denied: Invalid Origin.", http.StatusForbidden)
 			wkr.Warn(
 				"request denied: failed to parse origin header",
 				"err", err,
@@ -153,6 +188,10 @@ func (api *API) handleRequest(wkr *mgr.WorkerCtx, w http.ResponseWriter, r *http
 
 		// Check if the Origin matches the Host.
 		hostname := originURL.Hostname()
+		fmt.Printf("origin: %s\n", origin)
+		fmt.Printf("originURL: %+v\n", originURL)
+		fmt.Printf("originURL.Host: %s\n", originURL.Host)
+		fmt.Printf("hostname: %s\n", hostname)
 		switch {
 		case originURL.Host == r.Host:
 			// Origin (with port) matches Host.

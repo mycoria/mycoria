@@ -5,8 +5,39 @@
 {{ define "content" }}
 <section class="section">
   <h1 class="title">Discover</h1>
-  <p>
-    discover...
-  </p>
+
+  <div class="columns">
+    {{ range .Page.Routers }}
+    {{ $router := . }}
+    {{ range .PublicInfo.PublicServices }}
+    <div class="column is-4 card">
+      <div class="card-content">
+        <p class="subtitle">
+          {{ .Name }}
+        </p>
+        <p class="subtitle">
+          {{ .Domain }}<br>
+          {{ $router.Address.IP }}
+        </p>
+        <div class="content">
+          {{ .Description }}
+        </div>
+      </div>
+      <footer class="card-footer">
+        <p class="card-footer-item">
+          <span>
+            <a target="_blank" href="/open/{{ .Domain }}/{{ $router.Address.IP }}/">Open Domain</a>
+          </span>
+        </p>
+        <p class="card-footer-item">
+          <span>
+            <a target="_blank" href="http://[{{ $router.Address.IP }}]/">Open IP</a>
+          </span>
+        </p>
+      </footer>
+    </div>
+    {{ end }}
+  {{ end }}
+  </div>
 </section>
 {{ end }}

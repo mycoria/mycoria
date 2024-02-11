@@ -1,0 +1,53 @@
+{{ template "plain.html" . }}
+
+{{ define "title" }}Mycoria Open Domain{{ end }}
+
+{{ define "content" }}
+<div class="block has-text-centered pt-6">
+  
+  <section class="section">
+    <h1 class="title">Access {{ .Page.MapDomain }}</h1>
+  </section>
+
+  {{ if .Page.Error }}
+  <section class="hero is-danger">
+    <div class="hero-body">
+      <p class="title">
+        Error: {{ .Page.Error }}
+      </p>
+    </div>
+  </section>
+  {{ else if ne .Page.MappedRouter "" }}
+  <section class="hero is-warning">
+    <div class="hero-body">
+      <p class="title">
+        Change: {{ .Page.MapDomain }} ➢ {{ .Page.MapRouter }}
+      </p>
+    </div>
+  </section>
+  {{ else }}
+  <section class="hero is-success">
+    <div class="hero-body">
+      <p class="title">
+        New: {{ .Page.MapDomain }} ➢ {{ .Page.MapRouter }}
+      </p>
+    </div>
+  </section>
+  {{ end }}
+
+  <section class="section">
+    <form action="" method="POST">
+      <!-- Hidden Fields -->
+      <input type="hidden" name="nonce" value="{{ .Page.Nonce }}">
+      <input type="hidden" name="token" value="{{ .Page.Token }}">
+      
+      <!-- Submit Button -->
+      <button type="submit"
+        class="button {{ if .Page.MappedRouter }}is-warning{{ else }}is-success{{ end }}">
+        Set and Open
+      </button>
+    </form>
+  </section>
+
+</div>
+{{ end }}

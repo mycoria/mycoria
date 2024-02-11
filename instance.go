@@ -30,6 +30,7 @@ type Instance struct {
 	identity     *m.Address
 	frameBuilder *frame.Builder
 
+	storage   storage.Storage
 	state     *state.State
 	tunDevice *tun.Device
 	netstack  *netstack.NetStack
@@ -59,21 +60,20 @@ func New(version string, c *config.Config) (*Instance, error) {
 	instance.frameBuilder = frame.NewFrameBuilder()
 	instance.frameBuilder.SetFrameMargins(peering.FrameOffset, peering.FrameOverhead)
 
-	// Load state and create state manager.
-	var dataStore storage.Storage
+	// Load storage and create state manager.
 	switch {
 	case c.System.StatePath == "":
-		dataStore = storage.NewMemStorage()
+		instance.storage = storage.NewMemStorage()
 	case strings.HasSuffix(c.System.StatePath, ".json"):
 		var err error
-		dataStore, err = storage.NewJSONFileStorage(c.System.StatePath)
+		instance.storage, err = storage.NewJSONFileStorage(c.System.StatePath)
 		if err != nil {
 			return nil, fmt.Errorf("load state: %w", err)
 		}
 	default:
 		return nil, errors.New("unknown state file type")
 	}
-	instance.state = state.New(instance, dataStore)
+	instance.state = state.New(instance, instance.storage)
 
 	// Create tunnel interface and add router IP.
 	instance.tunDevice, err = tun.Create(instance)
@@ -98,7 +98,7 @@ func New(version string, c *config.Config) (*Instance, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listen on API netstack: %w", err)
 	}
-	instance.dns, err = dns.New(instance, packetConn, dataStore)
+	instance.dns, err = dns.New(instance, packetConn, instance.storage)
 	if err != nil {
 		return nil, fmt.Errorf("create local http API: %w", err)
 	}
@@ -126,7 +126,7 @@ func New(version string, c *config.Config) (*Instance, error) {
 
 	// Add all modules to instance group.
 	instance.Group = mgr.NewGroup(
-		dataStore,
+		instance.storage,
 
 		instance.state,
 		instance.tunDevice,
@@ -165,6 +165,11 @@ func (i *Instance) FrameBuilder() *frame.Builder {
 }
 
 /////
+
+// Storage returns the storage.
+func (i *Instance) Storage() storage.Storage {
+	return i.storage
+}
 
 // State returns the state manager.
 func (i *Instance) State() *state.State {

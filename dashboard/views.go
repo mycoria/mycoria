@@ -6,18 +6,26 @@ import (
 	"runtime"
 	"runtime/debug"
 
+	"github.com/mycoria/mycoria/m"
+	"github.com/mycoria/mycoria/storage"
 	"gopkg.in/yaml.v3"
 )
 
 func (d *Dashboard) registerViews() {
 	api := d.instance.API()
 
-	api.HandleFunc("/{$}", d.statusPage)
-	api.HandleFunc("/status", d.statusPage)
-	api.HandleFunc("/discover", d.discoverPage)
-	api.HandleFunc("/mappings", d.mappingsPage)
-	api.HandleFunc("/table", d.tablePage)
-	api.HandleFunc("/config", d.configPage)
+	api.HandleFunc("GET /{$}", d.statusPage)
+	api.HandleFunc("GET /status", d.statusPage)
+	api.HandleFunc("GET /discover", d.discoverPage)
+	api.HandleFunc("GET /table", d.tablePage)
+	api.HandleFunc("GET /config", d.configPage)
+
+	api.HandleFunc("GET /mappings", d.mappingsPage)
+	api.HandleFunc("POST /mappings", d.mappingsManage)
+
+	api.HandleFunc("GET /open", d.mappingManualOpen)
+	api.HandleFunc("GET /open/{domain}/{router}/", d.mappingOpenPage)
+	api.HandleFunc("POST /open/{domain}/{router}/", d.mappingOpenSet)
 }
 
 func (d *Dashboard) statusPage(w http.ResponseWriter, r *http.Request) {
@@ -50,11 +58,29 @@ func (d *Dashboard) statusPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Dashboard) discoverPage(w http.ResponseWriter, r *http.Request) {
-	d.render(w, r, "discover", nil)
-}
+	ip := d.instance.Identity().IP
+	q := storage.NewRouterQuery(
+		func(a *storage.StoredRouter) bool {
+			return a.PublicInfo != nil &&
+				len(a.PublicInfo.PublicServices) > 0
+		},
+		func(a, b *storage.StoredRouter) int {
+			aDist := m.IPDistance(ip, a.Address.IP)
+			bDist := m.IPDistance(ip, b.Address.IP)
+			return aDist.Compare(bDist)
+		},
+		1024, // TODO: Unlimited? Paginated?
+	)
+	if err := d.instance.Storage().QueryRouters(q); err != nil {
+		http.Error(w, fmt.Sprintf("failed to query router: %s", err), http.StatusInternalServerError)
+		return
+	}
 
-func (d *Dashboard) mappingsPage(w http.ResponseWriter, r *http.Request) {
-	d.render(w, r, "mappings", nil)
+	d.render(w, r, "discover", struct {
+		Routers []*storage.StoredRouter
+	}{
+		Routers: q.Result(),
+	})
 }
 
 func (d *Dashboard) tablePage(w http.ResponseWriter, r *http.Request) {

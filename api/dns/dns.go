@@ -148,38 +148,47 @@ func (srv *Server) handleRequest(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dn
 		)
 	}()
 
+	// Lookup and reply.
+	resolveToIP, source := srv.Lookup(mycoName)
+	if source != SourceNone {
+		reply(wkr, w, r, resolveToIP, source)
+	}
+
+	replyNotFound(wkr, w, r)
+}
+
+// Lookup looks up a name.
+func (srv *Server) Lookup(mycoName string) (netip.Addr, Source) {
 	// Source 0: API
 	if slices.Contains[[]string, string](srv.apiNames, mycoName) {
-		reply(wkr, w, r, config.DefaultAPIAddress)
-		return
+		return config.DefaultAPIAddress, SourceInternal
 	}
 
 	// Source 1: config.resolve
 	resolveToIP, ok := srv.instance.Config().Resolve[mycoName]
 	if ok {
-		reply(wkr, w, r, resolveToIP)
-		return
+		return resolveToIP, SourceResolveConfig
 	}
 
 	// Source 2: config.friends
 	friend, ok := srv.instance.Config().FriendsByName[mycoName]
 	if ok {
-		reply(wkr, w, r, friend.IP)
-		return
+		return friend.IP, SourceFriend
 	}
 
 	// Source 3: domain mappings
 	if srv.mappings != nil {
 		resolveToIP, err := srv.mappings.GetMapping(mycoName + "." + config.DefaultTLD)
 		if err == nil {
-			reply(wkr, w, r, resolveToIP)
+			// TODO: How should we handle a database failure here?
+			return resolveToIP, SourceMapping
 		}
 	}
 
-	replyNotFound(wkr, w, r)
+	return netip.Addr{}, SourceNone
 }
 
-func reply(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dns.Msg, ip netip.Addr) {
+func reply(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dns.Msg, ip netip.Addr, source Source) {
 	reply := new(dns.Msg)
 
 	// Create answers.
@@ -220,6 +229,12 @@ func reply(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dns.Msg, ip netip.Addr) 
 
 	default:
 		reply.Extra = []dns.RR{aaaa, svcb}
+	}
+
+	// Add info record to signify answer source.
+	infoTxt, err := dns.NewRR(`info.myco. 0 IN TXT "answer source: ` + string(source) + `"`)
+	if err == nil {
+		reply.Extra = append(reply.Extra, infoTxt)
 	}
 
 	// Finalize and reply.

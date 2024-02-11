@@ -2,6 +2,7 @@ package storage
 
 import (
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -21,7 +22,8 @@ type MemStorage struct {
 // NewMemStorage returns an empty storage.
 func NewMemStorage() *MemStorage {
 	return &MemStorage{
-		routers: make(map[netip.Addr]*StoredRouter),
+		routers:  make(map[netip.Addr]*StoredRouter),
+		mappings: make(map[string]StoredMapping),
 	}
 }
 
@@ -155,6 +157,10 @@ func (s *MemStorage) QueryMappings(search string) ([]StoredMapping, error) {
 			result = append(result, mapping)
 		}
 	}
+
+	slices.SortFunc[[]StoredMapping, StoredMapping](result, func(a, b StoredMapping) int {
+		return strings.Compare(a.Domain, b.Domain)
+	})
 
 	return result, nil
 }
