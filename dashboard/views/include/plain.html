@@ -10,9 +10,6 @@
     <link rel="stylesheet" href="/assets/fa/css/solid.min.css">
   </head>
   <body>
-    {{ template "navbar.html" . }}
-    <div class="container">
-      {{ block "content" . }}Template error: no content.{{ end }}
-    </div>
+    {{ block "content" . }}Template error: no content.{{ end }}
   </body>
 </html>
