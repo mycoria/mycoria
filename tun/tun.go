@@ -2,7 +2,9 @@ package tun
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
+	"strings"
 
 	"golang.zx2c4.com/wireguard/tun"
 
@@ -19,7 +21,7 @@ const DefaultTunName = "mycoria"
 // Device represents a tun device.
 type Device struct {
 	linkName  string
-	linkIndex int
+	linkIndex int //nolint:structcheck,unused // Used on linux.
 
 	tun tun.Device
 
@@ -56,16 +58,9 @@ func Create(instance instance) (*Device, error) {
 		return nil, fmt.Errorf("primary interface IP %v is invalid", primaryAddress)
 	}
 
-	// Create tun device.
-	t, err := tun.CreateTUN(linkName, instance.Config().TunMTU()) // TODO: Calculate MTU as needed.
-	if err != nil {
-		return nil, err
-	}
-
 	// Create device struct.
 	d := &Device{
 		linkName:       linkName,
-		tun:            t,
 		primaryAddress: primaryAddress,
 		secondaryIPs:   make([]netip.Prefix, 0, 2),
 		RecvRaw:        make(chan []byte, 1000),
@@ -74,6 +69,16 @@ func Create(instance instance) (*Device, error) {
 		sendRawOffset:  10,
 		instance:       instance,
 	}
+
+	// Prep.
+	d.PrepTUN()
+
+	// Create tun device.
+	t, err := tun.CreateTUN(linkName, instance.Config().TunMTU()) // TODO: Calculate MTU as needed.
+	if err != nil {
+		return nil, err
+	}
+	d.tun = t
 
 	// Add primary address to interface.
 	if err := d.InitInterface(primaryAddress); err != nil {
@@ -85,21 +90,74 @@ func Create(instance instance) (*Device, error) {
 }
 
 // Start starts brings the device online and starts workers.
-func (d *Device) Start(m *mgr.Manager) error {
+func (d *Device) Start(mgr *mgr.Manager) error {
 	if err := d.StartInterface(); err != nil {
 		return err
 	}
 
-	m.Go("read packets", d.tunReader)
-	m.Go("write packets", d.tunWriter)
-	m.Go("handle tun events", d.handleTunEvents)
+	if err := d.applyChromiumWorkaround(mgr); err != nil {
+		mgr.Warn(
+			"chromium workaround failed",
+			"err", err,
+		)
+	}
+
+	mgr.Go("read packets", d.tunReader)
+	mgr.Go("write packets", d.tunWriter)
+	mgr.Go("handle tun events", d.handleTunEvents)
 	return nil
 }
 
 // Stop closes the interface and stops workers.
-func (d *Device) Stop(m *mgr.Manager) error {
-	m.Cancel()
+func (d *Device) Stop(mgr *mgr.Manager) error {
+	mgr.Cancel()
 	return d.Close()
+}
+
+// applyChromiumWorkaround applies a workaround to enable Chromium to query AAAA records.
+func (d *Device) applyChromiumWorkaround(mgr *mgr.Manager) error {
+	// Chromium Workaround.
+	// Workaround to get Chromium based browsers to resolve IPv6/AAAA even when
+	// no global IPv6 connectivity is available.
+	// Chromium Docs:
+	// https://chromium.googlesource.com/chromium/src/+/refs/heads/main/net/dns/README.md#IPv6-and-connectivity
+	// TL;DR: `ip -6 route get 2001:4860:4860::8888` must succeed.
+
+	// Check if disabled.
+	if d.instance.Config().System.DisableChromiumWorkaround {
+		return nil
+	}
+
+	// Parse IP address (+net) that Chromium checks.
+	workaroundNet := netip.MustParsePrefix("2001:4860:4860::8888/128")
+
+	// Check if the OS has a route to the IP.
+	conn, err := net.DialUDP("udp6", nil, &net.UDPAddr{
+		IP:   net.IP(workaroundNet.Addr().AsSlice()),
+		Port: 53,
+	})
+	switch {
+	case err == nil:
+		// Global IPv6 connectivity seems to be available.
+		_ = conn.Close()
+	case strings.Contains(err.Error(), "unreachable"):
+		// If not route exists, fake it.
+		if err := d.AddRoute(workaroundNet, false); err != nil {
+			return fmt.Errorf("add route: %w", err)
+		}
+		mgr.Debug(
+			"chromium workaround applied",
+			"workaround-check", err,
+		)
+	default:
+		// Another error occurred.
+		mgr.Warn(
+			"chromium workaround check failed",
+			"err", err,
+		)
+	}
+
+	return nil
 }
 
 // Read one or more packets from the Device (without any additional headers).

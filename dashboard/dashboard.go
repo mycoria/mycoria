@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
-	"path/filepath"
+	"path"
 	"strings"
 	txtTemplate "text/template"
 	"time"
@@ -133,7 +133,7 @@ func (d *Dashboard) loadTemplates(baseFS fs.FS) error {
 		if err != nil {
 			return fmt.Errorf("clone include templates: %w", err)
 		}
-		pageTmpl, err := cloned.ParseFS(baseFS, filepath.Join("views", view.Name()))
+		pageTmpl, err := cloned.ParseFS(baseFS, path.Join("views", view.Name()))
 		if err != nil {
 			return fmt.Errorf("parse page %s template: %w", view.Name(), err)
 		}

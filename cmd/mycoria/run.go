@@ -6,11 +6,13 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime"
 	"runtime/pprof"
 	"syscall"
 	"time"
 
 	"github.com/lmittmann/tint"
+	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 
@@ -48,16 +50,39 @@ func run(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("invalid log level: %w", err)
 		}
 	}
+
 	// Setup logging.
+	// Define output.
 	logOutput := os.Stdout
-	slog.SetDefault(slog.New(
-		tint.NewHandler(os.Stdout, &tint.Options{
+	// Create handler depending on OS.
+	var logHandler slog.Handler
+	switch runtime.GOOS {
+	case "windows":
+		logHandler = tint.NewHandler(
+			colorable.NewColorable(logOutput),
+			&tint.Options{
+				AddSource:  true,
+				Level:      level,
+				TimeFormat: time.DateTime,
+			},
+		)
+	case "linux":
+		logHandler = tint.NewHandler(logOutput, &tint.Options{
 			AddSource:  true,
 			Level:      level,
 			TimeFormat: time.DateTime,
 			NoColor:    !isatty.IsTerminal(logOutput.Fd()),
-		}),
-	))
+		})
+	default:
+		logHandler = tint.NewHandler(os.Stdout, &tint.Options{
+			AddSource:  true,
+			Level:      level,
+			TimeFormat: time.DateTime,
+			NoColor:    true,
+		})
+	}
+	// Set as default logger.
+	slog.SetDefault(slog.New(logHandler))
 	slog.SetLogLoggerLevel(level)
 
 	// Setup up everything.

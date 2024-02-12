@@ -53,8 +53,6 @@ type instance interface {
 // New returns an initialized API connected to the given tun device.
 // Input packets must be submitted manually using SubmitPacket().
 func New(instance instance, tunDevice *tun.Device) (*NetStack, error) {
-	// getMTU := instance.Config().OverlayMTU// FIXME
-
 	ns := &NetStack{
 		instance:  instance,
 		nicID:     1,
@@ -74,7 +72,8 @@ func New(instance instance, tunDevice *tun.Device) (*NetStack, error) {
 		return nil, fmt.Errorf("failed to enable TCP SACK: %v", tErr)
 	}
 	// Create API endpoint to communicate with stack.
-	ns.stackIO = channel.New(128, 1500, "") // FIXME: uint32(getMTU())
+	// TODO: Should the MTU here be the same as the TUN device?
+	ns.stackIO = channel.New(128, 1500, "")
 	// Add API endpoint to stack.
 	tErr = ns.stack.CreateNIC(ns.nicID, ns.stackIO)
 	if tErr != nil {
@@ -186,18 +185,11 @@ func (ns *NetStack) handleResponsePackets(w *mgr.WorkerCtx) error {
 		// pktBuf.DecRef()
 
 		// Write packet data to tun device.
-		dataWritten, err := ns.tunDevice.Write([][]byte{pktWithOffset}, offset)
-		switch {
-		case err != nil:
-			w.Error("failed to write packet", "err", err)
-		case dataWritten != len(pktWithOffset):
-			w.Error(
-				"failed to write all packet data",
-				"written",
-				dataWritten,
-				"total",
-				fullLength,
-			)
+		select {
+		case ns.tunDevice.SendRaw <- pktWithOffset:
+			// Packet submitted to tun writer.
+		case <-w.Done():
+			return w.Ctx().Err()
 		}
 	}
 }

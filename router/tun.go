@@ -30,11 +30,27 @@ var multicastPrefix = netip.MustParsePrefix("ff00::/12")
 func (r *Router) handleTunPacket(w *mgr.WorkerCtx, packetData []byte) {
 	routerIP := r.instance.Identity().IP
 
-	// Check packet and parse important fields.
-	if len(packetData) < 44 {
-		w.Warn("packet too small for header", "packetSize", len(packetData))
+	// Check if packet is empty.
+	if len(packetData) == 0 {
+		w.Warn("ignoring empty packet")
 		return
 	}
+
+	// Basic packet checks.
+	ipVersion := packetData[0] >> 4
+	switch {
+	case ipVersion == 4:
+		w.Debug("ignoring IPv4 packet")
+		return
+	case ipVersion != 6:
+		w.Warn("ignoring packet with unknown IP version")
+		return
+	case len(packetData) < 44:
+		w.Warn("ignoring too small packet", "packetSize", len(packetData))
+		return
+	}
+
+	// Parse important fields.
 	src := netip.AddrFrom16([16]byte(packetData[8:24]))
 	dst := netip.AddrFrom16([16]byte(packetData[24:40]))
 	var (

@@ -1,6 +1,8 @@
 package tun
 
 import (
+	"runtime"
+
 	"github.com/mycoria/mycoria/mgr"
 )
 
@@ -52,44 +54,62 @@ func (d *Device) tunReader(w *mgr.WorkerCtx) error {
 func (d *Device) tunWriter(w *mgr.WorkerCtx) error {
 	b := d.instance.FrameBuilder()
 
+writeLoop:
 	for {
+		var (
+			packetData []byte
+			err        error
+			written    int
+		)
+
+		// Wait for packet and write.
 		select {
-		case packetData := <-d.SendRaw:
-			dataWritten, err := d.Write([][]byte{packetData}, d.sendRawOffset)
+		case packetData = <-d.SendRaw:
+			written, err = d.Write([][]byte{packetData}, d.sendRawOffset)
 			b.ReturnPooledSlice(packetData)
-			if err != nil {
-				w.Error("failed to write packet", "err", err)
-			} else if dataWritten != len(packetData) {
-				w.Error(
-					"failed to write all packet data",
-					"written",
-					dataWritten,
-					"total",
-					len(packetData),
-				)
-			}
 
 		case f := <-d.SendFrame:
-			var dataWritten int
-			packetData, err := f.MessageDataWithOffset(10)
+			packetData, err = f.MessageDataWithOffset(10)
 			if err == nil {
-				dataWritten, err = d.Write([][]byte{packetData}, 10)
+				written, err = d.Write([][]byte{packetData}, 10)
 			}
 			f.ReturnToPool()
-			if err != nil {
-				w.Error("failed to write packet", "err", err)
-			} else if dataWritten != len(packetData) {
-				w.Error(
-					"failed to write all packet data",
-					"written",
-					dataWritten,
-					"total",
-					len(packetData),
-				)
-			}
 
 		case <-w.Done():
 			return nil
+		}
+
+		// Report write errors.
+		if err != nil {
+			w.Error("failed to write packet", "err", err)
+			continue writeLoop
+		}
+
+		// Check if all data was written.
+		// The return value is different per OS.
+		switch runtime.GOOS {
+		case "linux":
+			// written is total bytes written.
+			if written != len(packetData) {
+				w.Error(
+					"failed to write all packet data (bytes)",
+					"written",
+					written,
+					"total",
+					len(packetData),
+				)
+			}
+		case "windows":
+			// written is total bufs written.
+			if written != 1 {
+				w.Error(
+					"failed to write all packet data (bufs)",
+					"written",
+					written,
+					"total",
+					1,
+				)
+			}
 		}
 	}
 }
