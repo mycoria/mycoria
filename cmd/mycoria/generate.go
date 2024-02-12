@@ -65,7 +65,10 @@ func makeDefaultConfig(id *m.Address) config.Store {
 	if err == nil {
 		for _, addr := range addrs {
 			netAddr, ok := addr.(*net.IPNet)
-			if ok && netAddr.IP.IsGlobalUnicast() {
+			if ok &&
+				netAddr.IP.IsGlobalUnicast() &&
+				!netAddr.IP.IsPrivate() &&
+				!netAddr.IP.IsLinkLocalUnicast() {
 				iana = append(iana, netAddr.IP.String())
 			}
 		}
