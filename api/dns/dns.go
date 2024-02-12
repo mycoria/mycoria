@@ -26,7 +26,8 @@ type Server struct {
 	dnsServer     *dns.Server
 	dnsServerBind net.PacketConn
 
-	apiNames []string
+	apiNames       []string
+	forbiddenNames []string
 }
 
 // instance is an interface subset of inst.Ance.
@@ -48,6 +49,10 @@ func New(instance instance, ln net.PacketConn, mappings storage.DomainMappingSto
 		apiNames: []string{
 			"router.myco", // Main UI domain.
 			"open.myco",   // For TOFU Names.
+		},
+		forbiddenNames: []string{
+			"wpad.myco", // Windows proxy auto detect.
+			"myco.myco", // Queried by Windows for unknown reason.
 		},
 	}
 	srv.dnsServer = &dns.Server{
@@ -151,16 +156,22 @@ func (srv *Server) handleRequest(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dn
 
 	// Lookup and reply.
 	resolveToIP, source := srv.Lookup(mycoName)
-	if source != SourceNone {
+	switch source {
+	case SourceInternal, SourceResolveConfig,
+		SourceFriend, SourceMapping:
 		reply(wkr, w, r, resolveToIP, source)
-	}
 
-	replyNotFound(wkr, w, r)
+	case SourceNone, SourceForbidden:
+		replyNotFound(wkr, w, r)
+
+	default:
+		replyNotFound(wkr, w, r)
+	}
 }
 
 // Lookup looks up a name.
 func (srv *Server) Lookup(domain string) (netip.Addr, Source) {
-	// Source 0: API
+	// Source 0: Internal API
 	if slices.Contains[[]string, string](srv.apiNames, domain) {
 		return config.DefaultAPIAddress, SourceInternal
 	}
@@ -171,7 +182,12 @@ func (srv *Server) Lookup(domain string) (netip.Addr, Source) {
 		return resolveToIP, SourceResolveConfig
 	}
 
-	// Source 2: config.friends
+	// Source 2: Forbidden
+	if slices.Contains[[]string, string](srv.forbiddenNames, domain) {
+		return netip.Addr{}, SourceForbidden
+	}
+
+	// Source 3: config.friends
 	friendName, cut := strings.CutSuffix(domain, config.DefaultDotTLD)
 	if cut {
 		friend, ok := srv.instance.Config().FriendsByName[friendName]
@@ -180,7 +196,7 @@ func (srv *Server) Lookup(domain string) (netip.Addr, Source) {
 		}
 	}
 
-	// Source 3: domain mappings
+	// Source 4: domain mappings
 	if srv.mappings != nil {
 		resolveToIP, err := srv.mappings.GetMapping(domain)
 		if err == nil {
