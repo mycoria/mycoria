@@ -1,5 +1,15 @@
 #!/bin/sh
 
+# Build for supported platforms.
+GOOS=linux GOARCH=amd64 go build -C cmd/mycoria
+GOOS=linux GOARCH=arm64 go build -C cmd/mycoria
+GOOS=windows GOARCH=amd64 go build -C cmd/mycoria
+GOOS=windows GOARCH=arm64 go build -C cmd/mycoria
+# GOOS=darwin GOARCH=amd64 go build -C cmd/mycoria
+# GOOS=darwin GOARCH=arm64 go build -C cmd/mycoria
+
+# Run linter.
 golangci-lint run
 
+# Run tests.
 go test ./...
