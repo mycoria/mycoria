@@ -46,8 +46,8 @@ func New(instance instance, ln net.PacketConn, mappings storage.DomainMappingSto
 		mappings:      mappings,
 		dnsServerBind: ln,
 		apiNames: []string{
-			"router", // Main UI domain.
-			"open",   // For TOFU Names.
+			"router.myco", // Main UI domain.
+			"open.myco",   // For TOFU Names.
 		},
 	}
 	srv.dnsServer = &dns.Server{
@@ -110,12 +110,13 @@ func (srv *Server) handleRequest(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dn
 	queryName := strings.ToLower(q.Name)
 
 	// Check TLD.
-	mycoName, cut := strings.CutSuffix(queryName, config.DefaultTLDBetweenDots)
-	if !cut {
+	if !strings.HasSuffix(queryName, config.DefaultTLDBetweenDots) {
 		// Ignore all queries outside of .myco
 		replyNotFound(wkr, w, r)
 		return
 	}
+	// Domain names are internally handle without the trailing dot.
+	mycoName := strings.TrimSuffix(queryName, ".")
 
 	// Check query type.
 	switch q.Qtype {
@@ -142,7 +143,7 @@ func (srv *Server) handleRequest(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dn
 	defer func() {
 		wkr.Debug(
 			"request",
-			"name", queryName,
+			"name", mycoName,
 			"type", dns.Type(q.Qtype),
 			"time", time.Since(started),
 		)
@@ -158,27 +159,30 @@ func (srv *Server) handleRequest(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dn
 }
 
 // Lookup looks up a name.
-func (srv *Server) Lookup(mycoName string) (netip.Addr, Source) {
+func (srv *Server) Lookup(domain string) (netip.Addr, Source) {
 	// Source 0: API
-	if slices.Contains[[]string, string](srv.apiNames, mycoName) {
+	if slices.Contains[[]string, string](srv.apiNames, domain) {
 		return config.DefaultAPIAddress, SourceInternal
 	}
 
 	// Source 1: config.resolve
-	resolveToIP, ok := srv.instance.Config().Resolve[mycoName]
+	resolveToIP, ok := srv.instance.Config().Resolve[domain]
 	if ok {
 		return resolveToIP, SourceResolveConfig
 	}
 
 	// Source 2: config.friends
-	friend, ok := srv.instance.Config().FriendsByName[mycoName]
-	if ok {
-		return friend.IP, SourceFriend
+	friendName, cut := strings.CutSuffix(domain, config.DefaultDotTLD)
+	if cut {
+		friend, ok := srv.instance.Config().FriendsByName[friendName]
+		if ok {
+			return friend.IP, SourceFriend
+		}
 	}
 
 	// Source 3: domain mappings
 	if srv.mappings != nil {
-		resolveToIP, err := srv.mappings.GetMapping(mycoName + "." + config.DefaultTLD)
+		resolveToIP, err := srv.mappings.GetMapping(domain)
 		if err == nil {
 			// TODO: How should we handle a database failure here?
 			return resolveToIP, SourceMapping

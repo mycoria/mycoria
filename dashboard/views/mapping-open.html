@@ -48,6 +48,16 @@
       </button>
     </form>
   </section>
+  
+  {{ if ne .Page.MapDomain .Page.MapDomainCleaned }}
+  <section class="section">
+    <div class="container is-max-desktop">
+      <div class="notification is-info">
+        <strong>{{ .Page.MapDomain }}</strong> is an IDN domain name and is also represented as <strong>{{ .Page.MapDomainCleaned }}</strong>
+      </div>
+    </div>
+  </section>
+  {{ end }}
 
 </div>
 {{ end }}

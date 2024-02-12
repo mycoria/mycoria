@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
-	"regexp"
 	"strings"
 
 	"github.com/mycoria/mycoria/api/dns"
 	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/storage"
+	"golang.org/x/net/idna"
 )
 
 func (d *Dashboard) mappingsPage(w http.ResponseWriter, r *http.Request) {
@@ -19,6 +19,17 @@ func (d *Dashboard) mappingsPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to get mappings: %s", err), http.StatusInternalServerError)
 		return
+	}
+
+	// Convert mappings to IDN domain names.
+	for i, mapping := range mappings {
+		if strings.Contains(mapping.Domain, "xn--") {
+			idnDomain, err := idna.ToUnicode(mapping.Domain)
+			if err == nil {
+				mapping.Domain = idnDomain
+				mappings[i] = mapping
+			}
+		}
 	}
 
 	// Create request token.
@@ -64,6 +75,10 @@ func (d *Dashboard) mappingsManage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Domain missing.", http.StatusBadRequest)
 		return
 	}
+	punyDomain, err := idna.ToASCII(domain)
+	if err == nil {
+		domain = punyDomain
+	}
 
 	// Execute manage action
 	switch r.Form.Get("action") {
@@ -81,23 +96,13 @@ func (d *Dashboard) mappingsManage(w http.ResponseWriter, r *http.Request) {
 	d.mappingsPage(w, r)
 }
 
-var mycoDomainRegex = regexp.MustCompile(
-	`^` + // match beginning
-		`(` + // start subdomain group
-		`(xn--)?` + // idn prefix
-		`[a-z0-9_-]{1,63}` + // main chunk
-		`\.` + // ending with a dot
-		`)+` + // end subdomain group, allow any number of subdomains
-		config.DefaultTLD + // TLD
-		`$`, // match end
-)
-
 type openMappingData struct {
 	*RequestToken
 
-	MapDomain    string
-	MapRouter    string
-	MappedRouter string
+	MapDomain        string
+	MapDomainCleaned string
+	MapRouter        string
+	MappedRouter     string
 
 	StatusCode int
 	Error      string
@@ -118,13 +123,23 @@ func (d *Dashboard) mappingOpenPage(w http.ResponseWriter, r *http.Request) {
 		MapRouter: r.PathValue("router"),
 	}
 
-	// Check input.
-	if !mycoDomainRegex.MatchString(data.MapDomain) {
+	// Check domain.
+	if !strings.HasSuffix(data.MapDomain, config.DefaultDotTLD) {
 		data.StatusCode = http.StatusBadRequest
 		data.Error = "Invalid domain. Must end with .myco"
 		d.render(w, r, "mapping-open", data)
 		return
 	}
+	cleanedDomain, ok := config.CleanDomain(data.MapDomain)
+	if !ok {
+		data.StatusCode = http.StatusBadRequest
+		data.Error = "Invalid domain."
+		d.render(w, r, "mapping-open", data)
+		return
+	}
+	data.MapDomainCleaned = cleanedDomain
+
+	// Check router IP.
 	routerIP, err := netip.ParseAddr(data.MapRouter)
 	if err != nil || !m.RoutingAddressPrefix.Contains(routerIP) {
 		data.StatusCode = http.StatusBadRequest
@@ -134,16 +149,8 @@ func (d *Dashboard) mappingOpenPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if domain is used somewhere else already.
-	mycoName, cut := strings.CutSuffix(data.MapDomain, "."+config.DefaultTLD)
-	if !cut {
-		data.StatusCode = http.StatusBadRequest
-		data.Error = "Invalid domain. Must end with .myco"
-		d.render(w, r, "mapping-open", data)
-		return
-	}
-	mappedRouter, lookupSource := d.instance.DNS().Lookup(mycoName)
-
 	// Check source.
+	mappedRouter, lookupSource := d.instance.DNS().Lookup(data.MapDomainCleaned)
 	switch lookupSource {
 	case dns.SourceNone:
 		// Continue without previously mapped router.
@@ -171,7 +178,7 @@ func (d *Dashboard) mappingOpenPage(w http.ResponseWriter, r *http.Request) {
 	// Create request token.
 	rToken, err := d.CreateRequestToken(
 		"create domain mapping",
-		data.MapDomain,
+		data.MapDomainCleaned,
 		data.MapRouter,
 	)
 	if err != nil {
@@ -191,23 +198,24 @@ func (d *Dashboard) mappingOpenSet(w http.ResponseWriter, r *http.Request) {
 	nonce := r.Form.Get("nonce")
 	token := r.Form.Get("token")
 
-	// Check if request token matches.
+	// Check domain again.
 	domain := r.PathValue("domain")
+	cleanedDomain, ok := config.CleanDomain(domain)
+	if !ok {
+		http.Error(w, "Invalid domain.", http.StatusBadRequest)
+		return
+	}
+
+	// Check if request token matches.
 	router := r.PathValue("router")
 	if !d.CheckRequestToken(
 		nonce,
 		token,
 		"create domain mapping",
-		domain,
+		cleanedDomain,
 		router,
 	) {
 		http.Error(w, "Token mismatch.", http.StatusBadRequest)
-		return
-	}
-
-	// Check domain.
-	if !strings.HasSuffix(domain, "."+config.DefaultTLD) {
-		http.Error(w, "Invalid domain.", http.StatusBadRequest)
 		return
 	}
 
@@ -219,7 +227,7 @@ func (d *Dashboard) mappingOpenSet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Save new mapping.
-	err = d.instance.Storage().SaveMapping(domain, routerIP)
+	err = d.instance.Storage().SaveMapping(cleanedDomain, routerIP)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save domain mapping: %s", err), http.StatusBadRequest)
 		return

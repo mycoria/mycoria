@@ -1,2 +1,12 @@
 Discover
 
+{{ range .Page.Routers -}}
+{{ $router := . -}}
+{{ range .PublicInfo.PublicServices -}}
+Name: {{ .Name }}
+Domain: {{ .Domain }}
+Router: {{ $router.Address.IP }}
+Description: {{ .Description }}
+
+{{ end -}}
+{{ end -}}

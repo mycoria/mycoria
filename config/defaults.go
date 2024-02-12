@@ -11,5 +11,8 @@ var DefaultAPIAddress = netip.MustParseAddr("fd00::b909")
 // DefaultTLD is the default TLD that Mycoria uses.
 var DefaultTLD = "myco"
 
+// DefaultDotTLD is the default TLD that Mycoria uses, but with a dot prefix.
+var DefaultDotTLD = ".myco"
+
 // DefaultTLDBetweenDots is the default TLD that Mycoria uses, but between dots.
 var DefaultTLDBetweenDots = ".myco."

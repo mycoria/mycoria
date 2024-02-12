@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mycoria/mycoria/m"
+	"golang.org/x/net/idna"
 )
 
 // Config holds initialized configuration.
@@ -56,16 +57,16 @@ type Service struct { //nolint:maligned
 }
 
 var (
-	tunNameRegex   = regexp.MustCompile(`^[A-z0-9]+$`)
-	subDomainRegex = regexp.MustCompile(
+	tunNameRegex = regexp.MustCompile(`^[A-z0-9]+$`)
+	domainRegex  = regexp.MustCompile(
 		`^` + // match beginning
 			`(` + // start subdomain group
 			`(xn--)?` + // idn prefix
 			`[a-z0-9_-]{1,63}` + // main chunk
 			`\.` + // ending with a dot
 			`)*` + // end subdomain group, allow any number of subdomains
-			`(xn--)?` + // idn prefix
-			`[a-z0-9_-]{1,63}` + // main chunk
+			`(xn--)?` + // TLD idn prefix
+			`[a-z0-9_-]{1,63}` + // TLD main chunk with at least one character
 			`$`, // match end
 	)
 )
@@ -207,7 +208,7 @@ Configure at least one of these settings:
 		}
 		if svcDomain != "" {
 			var valid bool
-			svcDomain, valid = checkDomain(svcDomain)
+			svcDomain, valid = CleanDomain(svcDomain)
 			if !valid {
 				return nil, fmt.Errorf(`service %s (#%d): domain %q is invalid`, svc.Name, i+1, domain)
 			}
@@ -241,7 +242,7 @@ Configure at least one of these settings:
 	c.Resolve = make(map[string]netip.Addr, len(c.ResolveConfig))
 	for domain, ip := range c.ResolveConfig {
 		// Check if domain is valid.
-		cleaned, valid := checkDomain(domain)
+		cleaned, valid := CleanDomain(domain)
 		if !valid {
 			return nil, fmt.Errorf("resolve domain %q is invalid", domain)
 		}
@@ -263,22 +264,31 @@ Configure at least one of these settings:
 	return c, nil
 }
 
-func checkDomain(domain string) (cleaned string, valid bool) {
+// CleanDomain cleans the given domain and also returns if it is valid.
+func CleanDomain(domain string) (cleaned string, valid bool) {
 	// Clean domain.
 	domain = strings.ToLower(domain)
 	domain = strings.TrimSuffix(domain, ".")
 
-	// Remove ".myco"
-	domain = strings.TrimSuffix(domain, "."+DefaultTLD)
-
-	// Check max length.
-	if len(domain) > (256 - len(DefaultTLD)) {
+	// Check if domain ends in ".myco".
+	if !strings.HasSuffix(domain, DefaultDotTLD) {
 		return domain, false
 	}
 
-	// Check (now subdomain) with regex.
-	if !subDomainRegex.MatchString(domain) {
+	// Check max length.
+	if len(domain) > 256 {
 		return domain, false
+	}
+
+	// Check domain with regex.
+	if !domainRegex.MatchString(domain) {
+		// Check if this is an IDN domain.
+		punyDomain, err := idna.ToASCII(domain)
+		if err == nil && domainRegex.MatchString(punyDomain) {
+			domain = punyDomain
+		} else {
+			return domain, false
+		}
 	}
 
 	return domain, true
