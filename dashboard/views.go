@@ -6,9 +6,10 @@ import (
 	"runtime"
 	"runtime/debug"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/storage"
-	"gopkg.in/yaml.v3"
 )
 
 func (d *Dashboard) registerViews() {

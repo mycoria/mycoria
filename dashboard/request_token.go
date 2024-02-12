@@ -14,11 +14,13 @@ const (
 	tokenNonceSize  = 8
 )
 
+// RequestToken is used for CSRF protection.
 type RequestToken struct {
 	Nonce string `json:"nonce"`
 	Token string `json:"token"`
 }
 
+// CreateRequestToken creates a new request token with the given actions as context.
 func (d *Dashboard) CreateRequestToken(actions ...string) (*RequestToken, error) {
 	// Generate nonce.
 	nonceData := make([]byte, tokenNonceSize)
@@ -35,6 +37,8 @@ func (d *Dashboard) CreateRequestToken(actions ...string) (*RequestToken, error)
 	}, nil
 }
 
+// CheckRequestToken checks the given token and action context.
+// The given actions must be same as when the token was created.
 func (d *Dashboard) CheckRequestToken(nonce, token string, actions ...string) (ok bool) {
 	return subtle.ConstantTimeCompare(
 		[]byte(d.calculateToken(nonce, actions...)),

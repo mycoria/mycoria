@@ -12,8 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mycoria/mycoria/m"
 	"golang.org/x/net/idna"
+
+	"github.com/mycoria/mycoria/m"
 )
 
 // Config holds initialized configuration.

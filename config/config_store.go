@@ -2,6 +2,7 @@ package config
 
 import (
 	"github.com/mitchellh/copystructure"
+
 	"github.com/mycoria/mycoria/m"
 )
 

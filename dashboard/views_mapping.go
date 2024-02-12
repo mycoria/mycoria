@@ -6,11 +6,12 @@ import (
 	"net/netip"
 	"strings"
 
+	"golang.org/x/net/idna"
+
 	"github.com/mycoria/mycoria/api/dns"
 	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/storage"
-	"golang.org/x/net/idna"
 )
 
 func (d *Dashboard) mappingsPage(w http.ResponseWriter, r *http.Request) {
@@ -160,6 +161,10 @@ func (d *Dashboard) mappingOpenPage(w http.ResponseWriter, r *http.Request) {
 		return
 	case dns.SourceResolveConfig:
 		data.Error = "Domain is already used by resolve configuration."
+		d.render(w, r, "mapping-open", data)
+		return
+	case dns.SourceForbidden:
+		data.Error = "Domain can have dangerous side-effects and may not be used."
 		d.render(w, r, "mapping-open", data)
 		return
 	case dns.SourceFriend:
