@@ -109,7 +109,15 @@ func (api *API) handleRequest(wkr *mgr.WorkerCtx, w http.ResponseWriter, r *http
 	logged := false
 	defer func() {
 		if !logged {
-			wkr.Debug(
+			logLevel := slog.LevelDebug
+			switch {
+			case statusCodeWriter.Status >= 500:
+				logLevel = slog.LevelError
+			case statusCodeWriter.Status >= 400:
+				logLevel = slog.LevelWarn
+			}
+			wkr.Log(
+				logLevel,
 				"request",
 				"method", r.Method,
 				"status", statusCodeWriter.Status,
