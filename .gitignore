@@ -3,3 +3,9 @@ cmd/mycoria/mycoria*
 
 # Test Data
 testdata
+
+# Release Builds
+cmd/mycoria/dist
+
+# Local Docs
+DEV.md
