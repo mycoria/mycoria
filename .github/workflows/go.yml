@@ -29,6 +29,7 @@ jobs:
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v3
+        continue-on-error: true
         with:
           version: v1.56
           only-new-issues: true

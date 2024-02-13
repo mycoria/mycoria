@@ -1,6 +1,7 @@
 #!/bin/sh
 
 # Build for supported platforms.
+echo "=> Building..."
 GOOS=linux GOARCH=amd64 go build -C cmd/mycoria -o dist/mycoria_linux_amd64
 GOOS=linux GOARCH=arm64 go build -C cmd/mycoria -o dist/mycoria_linux_arm64
 GOOS=windows GOARCH=amd64 go build -C cmd/mycoria -o dist/mycoria_windows_amd64.exe
@@ -9,10 +10,13 @@ GOOS=windows GOARCH=arm64 go build -C cmd/mycoria -o dist/mycoria_windows_arm64.
 # GOOS=darwin GOARCH=arm64 go build -C cmd/mycoria
 
 # Run linter.
+echo "=> Linting... (golangci-lint)"
 golangci-lint run
 
 # Run go vet
+echo "=> Linting... (go vet)"
 go vet ./...
 
 # Run tests.
+echo "=> Testing..."
 go test ./...
