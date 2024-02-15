@@ -70,6 +70,7 @@ func (s *MemStorage) SaveRouter(info *StoredRouter) error {
 	s.routersLock.Lock()
 	defer s.routersLock.Unlock()
 
+	info.UpdatedAt = time.Now()
 	s.routers[info.Address.IP] = info
 	return nil
 }
