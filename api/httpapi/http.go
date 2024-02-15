@@ -196,10 +196,6 @@ func (api *API) handleRequest(wkr *mgr.WorkerCtx, w http.ResponseWriter, r *http
 
 		// Check if the Origin matches the Host.
 		hostname := originURL.Hostname()
-		fmt.Printf("origin: %s\n", origin)
-		fmt.Printf("originURL: %+v\n", originURL)
-		fmt.Printf("originURL.Host: %s\n", originURL.Host)
-		fmt.Printf("hostname: %s\n", hostname)
 		switch {
 		case originURL.Host == r.Host:
 			// Origin (with port) matches Host.
