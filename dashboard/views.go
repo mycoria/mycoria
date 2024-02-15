@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"runtime"
 	"runtime/debug"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -60,10 +61,13 @@ func (d *Dashboard) statusPage(w http.ResponseWriter, r *http.Request) {
 
 func (d *Dashboard) discoverPage(w http.ResponseWriter, r *http.Request) {
 	ip := d.instance.Identity().IP
+	newerThan := time.Now().Add(-10 * time.Minute)
+
 	q := storage.NewRouterQuery(
 		func(a *storage.StoredRouter) bool {
 			return a.PublicInfo != nil &&
-				len(a.PublicInfo.PublicServices) > 0
+				len(a.PublicInfo.PublicServices) > 0 &&
+				a.UpdatedAt.After(newerThan)
 		},
 		func(a, b *storage.StoredRouter) int {
 			aDist := m.IPDistance(ip, a.Address.IP)
