@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"net/netip"
+	"slices"
 	"sync"
 
 	"github.com/mycoria/mycoria/config"
@@ -98,6 +99,20 @@ func (p *Peering) GetLinkByLabel(label m.SwitchLabel) Link {
 	return p.linksByLabel[label]
 }
 
+// GetLinkByRemoteHost returns the link with the given peering host.
+func (p *Peering) GetLinkByRemoteHost(peeringHost string) Link {
+	p.linksLock.RLock()
+	defer p.linksLock.RUnlock()
+
+	for _, link := range p.links {
+		if link.PeeringURL() != nil && link.PeeringURL().Domain == peeringHost {
+			return link
+		}
+	}
+
+	return nil
+}
+
 // GetLinks returns a list of all links.
 func (p *Peering) GetLinks() []Link {
 	p.linksLock.RLock()
@@ -107,6 +122,11 @@ func (p *Peering) GetLinks() []Link {
 	for _, link := range p.links {
 		list = append(list, link)
 	}
+
+	// TODO: Sort by nearest.
+	slices.SortFunc[[]Link, Link](list, func(a, b Link) int {
+		return a.Peer().Compare(b.Peer())
+	})
 
 	return list
 }

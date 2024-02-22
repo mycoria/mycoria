@@ -1,6 +1,9 @@
 package peering
 
 import (
+	"errors"
+	"log/slog"
+	"net"
 	"net/netip"
 	"time"
 
@@ -71,16 +74,25 @@ func (p *Peering) checkConnect(w *mgr.WorkerCtx, connected map[string]netip.Addr
 					break
 				}
 
+				// Skip if router does not have any public addresses or listeners.
+				if near.PublicInfo == nil || len(near.PublicInfo.IANA) == 0 || len(near.PublicInfo.Listeners) == 0 {
+					continue connectToNearest
+				}
+
 				// Check if we are already connected.
 				if p.GetLink(near.Address.IP) != nil {
 					// Aleady connected!
 					connected++
-					continue
+					continue connectToNearest
 				}
 
-				// Skip if we don't have any public addresses.
-				if near.PublicInfo == nil || len(near.PublicInfo.IANA) == 0 || len(near.PublicInfo.Listeners) == 0 {
-					continue
+				// Check if we are already connected to a peer with any of the advertised IANA IPs.
+				for _, iana := range near.PublicInfo.IANA {
+					if p.GetLinkByRemoteHost(iana) != nil {
+						// Aleady connected to this host, but to another router.
+						// This is common when a Mycoria router changes ID.
+						continue connectToNearest
+					}
 				}
 
 				// Attempt to connect.
@@ -93,25 +105,33 @@ func (p *Peering) checkConnect(w *mgr.WorkerCtx, connected map[string]netip.Addr
 							"value", listener,
 							"err", err,
 						)
-						continue
+						continue connectToNearest
 					}
 
 					// Try to connect on all available Domains/IPs.
 					for _, iana := range near.PublicInfo.IANA {
 						u.Domain = iana
 						_, err = p.PeerWith(u, netip.Addr{})
-						if err != nil {
-							w.Warn(
-								"failed to auto connect",
-								"router", near.Address.IP,
-								"peeringURL", u.String(),
-								"err", err,
-							)
-						} else {
+						if err == nil {
 							// Connected!
 							connected++
 							continue connectToNearest
 						}
+
+						// Log error according to source.
+						logLevel := slog.LevelWarn
+						var opError *net.OpError
+						if errors.As(err, &opError) {
+							// Log network errors only on debug, as they are common.
+							logLevel = slog.LevelDebug
+						}
+						w.Log(
+							logLevel,
+							"failed to auto connect",
+							"router", near.Address.IP,
+							"peeringURL", u.String(),
+							"err", err,
+						)
 					}
 				}
 			}

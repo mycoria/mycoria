@@ -30,15 +30,17 @@ func TestPeeringInit(t *testing.T) {
 		},
 	})
 
-	a := getTestInstance(t, cA)
-	b := getTestInstance(t, cB)
+	instA := getTestInstance(t, cA)
+	instB := getTestInstance(t, cB)
+	peeringA := New(instA, nil)
+	peeringB := New(instB, nil)
 
 	// Initialize connection.
-	stateA, msgFromA, err := createPeeringRequest(a, true)
+	stateA, msgFromA, err := peeringA.createPeeringRequest(true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	stateB, msgFromB, err := createPeeringRequest(b, false)
+	stateB, msgFromB, err := peeringB.createPeeringRequest(false)
 	if err != nil {
 		t.Fatal(err)
 	}

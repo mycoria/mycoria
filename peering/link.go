@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"sync/atomic"
+	"time"
 
 	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/frame"
@@ -49,6 +50,12 @@ type Link interface {
 	// RemoteAddr returns the underlying remote net.Addr of the connection.
 	RemoteAddr() net.Addr
 
+	// Started returns when the link was created.
+	Started() time.Time
+
+	// Uptime returns how long the link has been up.
+	Uptime() time.Duration
+
 	// Latency returns the latency of the link in milliseconds.
 	Latency() uint16
 
@@ -83,6 +90,8 @@ type LinkBase struct {
 	peeringURL *m.PeeringURL
 	// outgoing specifies whether the link was initiated by this router.
 	outgoing bool
+	// started holds the time when the link was created.
+	started time.Time
 	// latency is the latency of the link in ms (one direction).
 	latency uint16
 	// switchLabel is the switch ID for this link.
@@ -108,6 +117,7 @@ func newLinkBase(
 		sendQueueRegl: make(chan frame.Frame, 1000),
 		peeringURL:    peeringURL,
 		outgoing:      outgoing,
+		started:       time.Now(),
 		peering:       peering,
 	}
 	link.frameSize = config.CalculateExpectedFrameSize(link.RemoteAddr())
@@ -150,6 +160,16 @@ func (link *LinkBase) PeeringURL() *m.PeeringURL {
 // Outgoing returns whether the connection was initiated by this router.
 func (link *LinkBase) Outgoing() bool {
 	return link.outgoing
+}
+
+// Started returns when the link was created.
+func (link *LinkBase) Started() time.Time {
+	return link.started
+}
+
+// Uptime returns how long the link has been up.
+func (link *LinkBase) Uptime() time.Duration {
+	return time.Since(link.started)
 }
 
 // SendPriority sends a priority frame to the peer.
@@ -559,7 +579,7 @@ func (link *LinkBase) handleSetupMessages(client bool) (*peeringRequestState, er
 	builder := link.peering.instance.FrameBuilder()
 
 	// Initialize connection.
-	state, f, err := createPeeringRequest(link.peering.instance, client)
+	state, f, err := link.peering.createPeeringRequest(client)
 	if err != nil {
 		return nil, fmt.Errorf("create peering request (1): %w", err)
 	}

@@ -27,7 +27,7 @@ const (
 )
 
 type peeringRequestState struct {
-	instance instance
+	peering *Peering
 
 	// step designates the current peering step:
 	// 0: waiting for request
@@ -73,7 +73,7 @@ type peeringErr struct {
 	Err string `cbor:"err,omitempty" json:"err,omitempty"`
 }
 
-func createPeeringRequest(instance instance, client bool) (*peeringRequestState, frame.Frame, error) {
+func (p *Peering) createPeeringRequest(client bool) (*peeringRequestState, frame.Frame, error) {
 	challenge := make([]byte, challengeSize)
 	_, err := rand.Read(challenge)
 	if err != nil {
@@ -82,9 +82,9 @@ func createPeeringRequest(instance instance, client bool) (*peeringRequestState,
 
 	// Create request.
 	r := &peeringRequest{
-		RouterVersion: instance.Version(),
-		Universe:      instance.Config().Router.Universe,
-		Address:       instance.Identity().PublicAddress,
+		RouterVersion: p.instance.Version(),
+		Universe:      p.instance.Config().Router.Universe,
+		Address:       p.instance.Identity().PublicAddress,
 		Challenge:     challenge,
 		LinkVersion:   1,
 	}
@@ -94,8 +94,8 @@ func createPeeringRequest(instance instance, client bool) (*peeringRequestState,
 	}
 
 	// Make and sign frame.
-	f, err := instance.FrameBuilder().NewFrameV1(
-		instance.Identity().IP,
+	f, err := p.instance.FrameBuilder().NewFrameV1(
+		p.instance.Identity().IP,
 		m.RouterAddress,
 		frame.RouterPing,
 		nil,
@@ -107,13 +107,13 @@ func createPeeringRequest(instance instance, client bool) (*peeringRequestState,
 	}
 	f.SetTTL(0)
 	f.SetSequenceTime(time.Now().Round(state.DefaultPrecision).Add(-state.DefaultPrecision))
-	if err := f.SignRaw(instance.Identity().PrivateKey); err != nil {
+	if err := f.SignRaw(p.instance.Identity().PrivateKey); err != nil {
 		return nil, nil, fmt.Errorf("sign frame: %w", err)
 	}
 	f.SetTTL(1)
 
 	return &peeringRequestState{
-		instance:  instance,
+		peering:   p,
 		challenge: challenge,
 		client:    client,
 		step:      1,
@@ -159,7 +159,7 @@ func (state *peeringRequestState) handlePeeringRequest(in frame.Frame) (frame.Fr
 	}
 
 	// Check if we are connecting to self.
-	if in.SrcIP() == state.instance.Identity().IP {
+	if in.SrcIP() == state.peering.instance.Identity().IP {
 		return nil, fmt.Errorf("received peering request from myself")
 	}
 
@@ -182,13 +182,18 @@ func (state *peeringRequestState) handlePeeringRequest(in frame.Frame) (frame.Fr
 		return nil, fmt.Errorf("verify address: %w", err)
 	}
 
+	// Check if we already have a connection to this router.
+	if state.peering.GetLink(r.Address.IP) != nil {
+		return nil, errors.New("already connected to this router")
+	}
+
 	// Get session and add router if necessary.
-	session := state.instance.State().GetSession(remoteAddr.IP)
+	session := state.peering.instance.State().GetSession(remoteAddr.IP)
 	if session == nil {
-		if err := state.instance.State().AddRouter(remoteAddr); err != nil {
+		if err := state.peering.instance.State().AddRouter(remoteAddr); err != nil {
 			return nil, fmt.Errorf("add router to state: %w", err)
 		}
-		session = state.instance.State().GetSession(remoteAddr.IP)
+		session = state.peering.instance.State().GetSession(remoteAddr.IP)
 		if session == nil {
 			return nil, errors.New("session manager failure")
 		}
@@ -213,17 +218,17 @@ func (state *peeringRequestState) handlePeeringRequest(in frame.Frame) (frame.Fr
 	resp := &peeringResponse{}
 
 	// Check universe.
-	if r.Universe != state.instance.Config().Router.Universe {
+	if r.Universe != state.peering.instance.Config().Router.Universe {
 		return nil, errors.New("universe mismatch")
 	}
 	// Add universe auth, if set.
-	if r.Universe != "" && state.instance.Config().Router.UniverseSecret != "" {
+	if r.Universe != "" && state.peering.instance.Config().Router.UniverseSecret != "" {
 		resp.UniverseAuth = makeUniverseAuth(
 			r.Universe,
-			state.instance.Config().Router.UniverseSecret,
+			state.peering.instance.Config().Router.UniverseSecret,
 			r.Challenge,
 			state.remoteIP,
-			state.instance.Identity().IP,
+			state.peering.instance.Identity().IP,
 		)
 	}
 
@@ -250,7 +255,7 @@ func (state *peeringRequestState) handlePeeringRequest(in frame.Frame) (frame.Fr
 	if err != nil {
 		return nil, fmt.Errorf("marshal response: %w", err)
 	}
-	if err := in.ReplyTo(state.instance.Identity().IP, state.remoteIP, nil, msg, nil); err != nil {
+	if err := in.ReplyTo(state.peering.instance.Identity().IP, state.remoteIP, nil, msg, nil); err != nil {
 		return nil, fmt.Errorf("frame reply: %w", err)
 	}
 	response := in
@@ -277,7 +282,7 @@ func (state *peeringRequestState) handlePeeringResponse(in frame.Frame) (frame.F
 	if in.SrcIP() != state.remoteIP {
 		return nil, errors.New("peering response src IP does not match session")
 	}
-	if in.DstIP() != state.instance.Identity().IP {
+	if in.DstIP() != state.peering.instance.Identity().IP {
 		return nil, errors.New("peering response dst IP does not match session")
 	}
 
@@ -299,15 +304,15 @@ func (state *peeringRequestState) handlePeeringResponse(in frame.Frame) (frame.F
 	}
 
 	// Check universe auth.
-	if state.instance.Config().Router.UniverseSecret != "" {
+	if state.peering.instance.Config().Router.UniverseSecret != "" {
 		if len(r.UniverseAuth) == 0 {
 			return nil, errors.New("universe auth missing")
 		}
 		universeCheckAuth := makeUniverseAuth(
-			state.instance.Config().Router.Universe,
-			state.instance.Config().Router.UniverseSecret,
+			state.peering.instance.Config().Router.Universe,
+			state.peering.instance.Config().Router.UniverseSecret,
 			state.challenge,
-			state.instance.Identity().IP,
+			state.peering.instance.Identity().IP,
 			state.remoteIP,
 		)
 		if subtle.ConstantTimeCompare(r.UniverseAuth, universeCheckAuth) == 0 {
@@ -363,7 +368,7 @@ func (state *peeringRequestState) handlePeeringAck(in frame.Frame) error {
 	if in.SrcIP() != state.remoteIP {
 		return errors.New("peering response src IP does not match session")
 	}
-	if in.DstIP() != state.instance.Identity().IP {
+	if in.DstIP() != state.peering.instance.Identity().IP {
 		return errors.New("peering response dst IP does not match session")
 	}
 
