@@ -8,7 +8,7 @@ import (
 )
 
 // Version is the version of this command.
-const Version = "v0.1.1"
+const Version = "v0.2.0"
 
 var (
 	rootCmd = &cobra.Command{
