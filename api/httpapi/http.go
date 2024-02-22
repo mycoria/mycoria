@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/mycoria/mycoria/config"
@@ -113,6 +114,9 @@ func (api *API) handleRequest(wkr *mgr.WorkerCtx, w http.ResponseWriter, r *http
 			switch {
 			case statusCodeWriter.Status >= 500:
 				logLevel = slog.LevelError
+			case statusCodeWriter.Status >= 400 &&
+				strings.HasSuffix(r.URL.Path, ".map"):
+				logLevel = slog.LevelDebug
 			case statusCodeWriter.Status >= 400:
 				logLevel = slog.LevelWarn
 			}

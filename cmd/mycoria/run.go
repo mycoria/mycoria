@@ -91,6 +91,13 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to initialize mycoria: %w", err)
 	}
 
+	// Log own Router ID on start.
+	slog.Info(
+		"starting mycoria",
+		"version", Version,
+		"id", c.Router.Address.IP,
+	)
+
 	// Finalize and start all workers.
 	err = myco.Start()
 	if err != nil {
