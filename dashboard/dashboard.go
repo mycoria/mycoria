@@ -21,6 +21,7 @@ import (
 	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/mgr"
+	"github.com/mycoria/mycoria/peering"
 	"github.com/mycoria/mycoria/router"
 	"github.com/mycoria/mycoria/state"
 	"github.com/mycoria/mycoria/storage"
@@ -58,6 +59,7 @@ type instance interface {
 	API() *httpapi.API
 	DNS() *dns.Server
 	Router() *router.Router
+	Peering() *peering.Peering
 }
 
 // New adds a dashboard to the given instance.
@@ -150,11 +152,14 @@ func (d *Dashboard) loadTemplates(baseFS fs.FS) error {
 }
 
 type renderingData struct {
-	RouterID netip.Addr
-	Version  string
-	Started  time.Time
-	Uptime   time.Duration
-	Page     any
+	RouterID  netip.Addr
+	RouterIDA string
+	RouterIDB string
+	Version   string
+	Hostname  string
+	Started   time.Time
+	Uptime    time.Duration
+	Page      any
 }
 
 var (
@@ -166,12 +171,17 @@ func (d *Dashboard) render(w http.ResponseWriter, r *http.Request, templateName 
 	var err error
 
 	// Build render data set.
+	hostname, _ := os.Hostname()
+	id := d.instance.Identity().IP.StringExpanded()
 	renderData := &renderingData{
-		RouterID: d.instance.Identity().IP,
-		Version:  d.instance.Version(),
-		Started:  d.instance.Config().Started(),
-		Uptime:   d.instance.Config().Uptime(),
-		Page:     data,
+		RouterID:  d.instance.Identity().IP,
+		RouterIDA: id[:19],
+		RouterIDB: id[20:],
+		Version:   d.instance.Version(),
+		Hostname:  hostname,
+		Started:   d.instance.Config().Started(),
+		Uptime:    d.instance.Config().Uptime(),
+		Page:      data,
 	}
 
 	// Reload templates in dev mode.

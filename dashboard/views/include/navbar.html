@@ -1,34 +1,44 @@
-<nav class="navbar is-dark" role="navigation" aria-label="main navigation">
-  <div class="navbar-brand">
-    <a class="navbar-item is-primary" href="/">
-      <h1 class="has-text-weight-bold">
-        Mycoria Router
-      </h1>
-    </a>
-  </div>
+<div class="sticky-top">
+  <img src="/assets/icon.png">
 
-  <div class="navbar-menu is-active">
-    <div class="navbar-start">
-      <a class="navbar-item" href="/discover">
+  <h5 class="mt-3">Mycoria Router</h5>
+
+  <p class="text-secondary fw-light text-break">
+    {{ .RouterID }}
+  </p>
+
+  <ul class="nav flex-column mt-5">
+    <li class="nav-item">
+      <a class="nav-link icon-link icon-link-hover link-secondary ps-0"
+        style="--bs-icon-link-transform: translate3d(0, -.125rem, 0);"
+        href="/discover">
+        <i class="bi bi-broadcast-pin mb-2 me-3"></i>
         Discover
       </a>
-      
-      <a class="navbar-item" href="/mappings">
+    </li>
+    <li class="nav-item">
+      <a class="nav-link icon-link icon-link-hover link-secondary ps-0"
+        style="--bs-icon-link-transform: translate3d(0, -.125rem, 0);"
+        href="/mappings">
+        <i class="bi bi-at mb-2 me-3"></i>
         Domains
       </a>
-      
-      <a class="navbar-item" href="/table">
+    </li>
+    <li class="nav-item">
+      <a class="nav-link icon-link icon-link-hover link-secondary ps-0"
+        style="--bs-icon-link-transform: translate3d(0, -.125rem, 0);"
+        href="/table">
+        <i class="bi bi-diagram-3 mb-2 me-3"></i>
         Routing Table
       </a>
-
-      <a class="navbar-item" href="/config">
+    </li>
+    <li class="nav-item">
+      <a class="nav-link icon-link icon-link-hover link-secondary ps-0"
+        style="--bs-icon-link-transform: translate3d(0, -.125rem, 0);"
+        href="/config">
+        <i class="bi bi-gear mb-2 me-3"></i>
         Config
       </a>
-    </div>
-
-    <div class="navbar-end pr-2 has-text-grey-light">
-      Router: {{ .RouterID }}<br>
-      Version: {{ .Version }} &nbsp;&nbsp;&nbsp; Uptime: {{ .Uptime.Round 1000000000 }}
-    </div>
-  </div>
-</nav>
+    </li>
+  </ul>
+</div>

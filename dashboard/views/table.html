@@ -3,8 +3,12 @@
 {{ define "title" }}Mycoria Routing Table{{ end }}
 
 {{ define "content" }}
-<section class="section">
-  <h1 class="title">Routing Table</h1>
-  <pre>{{ .Page.Table }}</pre>
-</section>
+<div class="card bg-body-tertiary border-0 text-body-emphasis m-3">
+  <div class="card-header bg-body-secondary text-body-emphasis">
+    <strong>Routing Table</strong>
+  </div>
+  <div class="card-body">
+    <pre>{{ .Page.Table }}</pre>
+  </div>
+</div>
 {{ end }}

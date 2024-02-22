@@ -3,43 +3,36 @@
 {{ define "title" }}Mycoria Discover{{ end }}
 
 {{ define "content" }}
-<section class="section">
-  <h1 class="title">Discover</h1>
-
-  <div class="columns">
+<div class="container-fluid p-3">
+  <div class="row g-3 row-cols-1 row-cols-lg-2 row-cols-xl-3">
     {{ range .Page.Routers }}
     {{ $router := . }}
     {{ range .PublicInfo.PublicServices }}
-    <div class="column is-full-mobile is-half-tablet is-one-third-desktop is-one-third-widescreen is-one-quarter-fullhd">
-      <div class="card">
-        <div class="card-content">
-          <p class="title">
-            {{ .Name }}
-          </p>
-          <p class="subtitle">
-            {{ .Domain }}<br>
-            {{ $router.Address.IP }}
-          </p>
-          <div class="content">
-            {{ .Description }}
-          </div>
+    <div class="col">
+
+      <div class="card border-0 bg-body-tertiary">
+        <div class="card-header text-body-emphasis bg-body-secondary">
+          <strong>{{ .Name }}</strong>
         </div>
-        <footer class="card-footer">
-          <p class="card-footer-item">
-            <span>
-              <a target="_blank" href="/open/{{ .Domain }}/{{ $router.Address.IP }}/">Open Domain</a>
-            </span>
+        <div class="card-body">
+          <p class="card-text">
+            <strong>{{ .Domain }}</strong>
+            <br>
+            <small>{{ $router.Address.IP }}</small>
           </p>
-          <p class="card-footer-item">
-            <span>
-              <a target="_blank" href="http://[{{ $router.Address.IP }}]/">Open IP</a>
-            </span>
+          <p class="card-text text-secondary">
+            {{ .Description }}
           </p>
-        </footer>
+        </div>
+        <div class="card-footer bg-body-tertiary d-flex justify-content-around">
+          <a target="_blank" href="/open/{{ .Domain }}/{{ $router.Address.IP }}/">Open Domain</a>
+          <a target="_blank" href="http://[{{ $router.Address.IP }}]/">Open IP</a>
+        </div>
       </div>
+
     </div>
     {{ end }}
-  {{ end }}
+    {{ end }}
   </div>
-</section>
+</div>
 {{ end }}

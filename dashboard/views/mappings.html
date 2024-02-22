@@ -3,58 +3,53 @@
 {{ define "title" }}Mycoria Mappings{{ end }}
 
 {{ define "content" }}
-<section class="section">
-  <h1 class="title">Domain Mappings</h1>
-
-  <form action="/open" target="_blank" method="GET">
-    <div class="block is-flex is-align-content-center my-4">
-      <div class="is-size-5">
-        Add New:
-      </div>
-      <div class="field has-addons px-3">
-        <p class="control">
-          <input name="domain" class="input" type="text" placeholder="Domain">
-        </p>
-        <p class="control">
-          <a class="button is-static">
-            .myco
-          </a>
-        </p>
-      </div>
-      <div class="field is-grouped">
-        <p class="control">
-          <input name="router" class="input" type="text" placeholder="Mycoria Router Address">
-        </p>  
-        <p class="control">
-          <button class="button is-primary">Open</button>
-        </p>
-      </div>
+<div class="card bg-body-tertiary border-0 text-body-emphasis m-3 overflow-hidden">
+  <div class="card-header bg-body-secondary text-body-emphasis">
+    <strong>Domain Mappings</strong>
+  </div>
+  <div class="card-body p-0">
+    
+    <div class="card-text p-3 my-3">
+      <form action="/open" target="_blank" method="GET">
+        <div class="input-group">
+          <span class="input-group-text">Add: </span>
+          <input name="domain" type="text" class="form-control" placeholder="domain" aria-label="domain">
+          <span class="input-group-text">.myco</span>
+          <span class="input-group-text"><i class="bi bi-arrow-right-square-fill text-primary"></i></span>
+          <input  name="router" type="text" class="form-control" placeholder="router address" aria-label="router">
+          <button class="btn btn-primary" type="submit">Open</button>
+        </div>
+      </form>
     </div>
-  </form>
 
-  <table class="table is-bordered is-striped is-narrow is-hoverable">
-    <tbody>
-      {{ range .Page.Mappings }}
-      <tr>
-        <th class="has-background-light">
-          <a href="http://{{ .Domain }}/" target="_blank">{{ .Domain }}</a> 
-        </th>
-        <td>{{ .Router }}</td>
-        <td>{{ .Created }}</td>
-        <td>
-          <form action="" method="POST">
-            <input type="hidden" name="nonce" value="{{ $.Page.Nonce }}">
-            <input type="hidden" name="token" value="{{ $.Page.Token }}">
-            <input type="hidden" name="domain" value="{{ .Domain }}">
-            <input type="hidden" name="action" value="delete">
-            <button type="submit" class="button is-small is-white">
-              <i class="fa-solid fa-trash"></i>
-            </button>
-          </form>
-        </td>
-      </tr>
-      {{ end }}
-    </tbody>
-  </table>  
-</section>
+    <table class="table table-hover mb-0">
+      <tbody>
+        {{ range .Page.Mappings }}
+        <tr>
+          <th class="bg-body-tertiary">
+            <a href="http://{{ .Domain }}/" target="_blank"
+              class="link-body-emphasis link-offset-3 link-underline-opacity-25 link-underline-opacity-100-hover">
+              {{ .Domain }}
+            </a> 
+          </th>
+          <td class="bg-body-tertiary fw-light font-monospace">{{ .Router.StringExpanded }}</td>
+          <td class="bg-body-tertiary">{{ .Created.Format "02.01.06 15:04:05 MST" }}</td>
+          <td class="bg-body-tertiary">
+            <form action="" method="POST">
+              <input type="hidden" name="nonce" value="{{ $.Page.Nonce }}">
+              <input type="hidden" name="token" value="{{ $.Page.Token }}">
+              <input type="hidden" name="domain" value="{{ .Domain }}">
+              <input type="hidden" name="action" value="delete">
+              <button type="submit" class="btn p-2" style="margin: -0.5rem !important;">
+                <i class="bi bi-trash3"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
+
+  </div>
+</div>
 {{ end }}

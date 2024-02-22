@@ -1,15 +1,17 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ block "title" . }}Mycoria Router{{ end }}</title>
-    <link rel="stylesheet" href="/assets/bulma-custom.css">
-    <link rel="stylesheet" href="/assets/fa/css/fontawesome.min.css">
-    <link rel="stylesheet" href="/assets/fa/css/solid.min.css">
-  </head>
-  <body>
-    {{ block "content" . }}Template error: no content.{{ end }}
-  </body>
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ block "title" . }}Mycoria Router{{ end }}</title>
+  <link rel="icon" href="/assets/icon.png" />
+  <link rel="stylesheet" href="/assets/bootstrap.min.css">
+  <link rel="stylesheet" href="/assets/bootstrap-icons.css">
+  <script src="/assets/theme.js" blocking="render" async></script>
+  <script src="/assets/bootstrap.min.js" defer async></script>
+</head>
+<body class="bg-dark-subtle">
+  {{ block "content" . }}Template error: no content.{{ end }}
+</body>
 </html>

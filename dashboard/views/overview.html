@@ -1,0 +1,91 @@
+{{ template "base.html" . }}
+
+{{ define "title" }}Mycoria Router{{ end }}
+
+{{ define "content" }}
+<div class="card bg-body-tertiary border-0 text-body-emphasis m-3 overflow-hidden">
+  <div class="card-header bg-body-secondary text-body-emphasis">
+    <strong>Status</strong>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm table-hover mb-0">
+      <tbody>
+        <tr>
+          <td class="bg-body-tertiary px-3">Uptime</td>
+          <td class="bg-body-tertiary">{{ .Uptime.Round 1000000000 }}</td>
+        </tr>
+        <tr>
+          <td class="bg-body-tertiary px-3">Started</td>
+          <td class="bg-body-tertiary">{{ .Started.Format "02.01.06 15:04:05 MST" }}</td>
+        </tr>
+        <tr>
+          <td class="bg-body-tertiary px-3">Host CPUs</td>
+          <td class="bg-body-tertiary">{{ .Page.NumCPU }}</td>
+        </tr>
+        <tr>
+          <td class="bg-body-tertiary px-3">Goroutines</td>
+          <td class="bg-body-tertiary">{{ .Page.NumGoroutine }}</td>
+        </tr>
+        <tr>
+          <td class="bg-body-tertiary px-3">Memory Usage</td>
+          <td class="bg-body-tertiary">{{ .Page.MemStats.HeapAlloc | filesizeformat }}</td>
+        </tr>
+      </tbody>
+    </table>  
+  </div>
+</div>
+
+<div class="card bg-body-tertiary border-0 text-body-emphasis m-3 overflow-hidden">
+  <div class="card-header bg-body-secondary text-body-emphasis">
+    <strong>Peerings</strong>
+  </div>
+  <div class="card-body p-0">
+
+    <table class="table table-hover mb-0">
+      <tbody>
+        {{ range .Page.Peerings }}
+        <tr>
+          <td class="bg-body-tertiary fw-light font-monospace">
+            {{ .Peer.StringExpanded }}
+          </td>
+          <td class="bg-body-tertiary">
+            {{ .PeeringURL }}
+          </td>
+          <!-- <td class="bg-body-tertiary">
+            {{ .Latency }}ms
+          </td> -->
+          <td class="bg-body-tertiary">
+            {{ .Uptime.Round 1000000000 }}
+          </td>
+          <td class="bg-body-tertiary">
+            {{ .Started.Format "02.01.06 15:04:05 MST" }}
+          </td>
+          <td class="bg-body-tertiary">
+            <form action="" method="POST">
+              <input type="hidden" name="nonce" value="{{ $.Page.Nonce }}">
+              <input type="hidden" name="token" value="{{ $.Page.Token }}">
+              <input type="hidden" name="peer" value="{{ .Peer }}">
+              <input type="hidden" name="action" value="close-link">
+              <button type="submit" class="btn p-2" style="margin: -0.5rem !important;">
+                <i class="bi bi-slash-circle"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
+
+    <!-- <div class="card-text p-3 my-3">
+      <form action="/open" target="_blank" method="GET">
+        <div class="input-group">
+          <span class="input-group-text">New Peering: </span>
+          <input name="url" type="text" class="form-control" placeholder="peering URL" aria-label="url">
+          <button class="btn btn-primary" type="submit">Connect</button>
+        </div>
+      </form>
+    </div> -->
+
+  </div>
+</div>
+{{ end }}

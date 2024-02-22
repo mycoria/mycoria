@@ -1,0 +1,65 @@
+<div class="d-flex flex-column flex-shrink-0 p-3 text-body-emphasis"
+  style="position: fixed; width: 280px; height: 100vh; max-height: 100vh; overflow-x: hidden; overflow-y: hidden;">
+
+  <div class="position-absolute top-0 end-0 m-3">
+    <img src="/assets/icon.png" class="" height="45px" width="45px">
+  </div>
+  
+  <h5 class="mt-0">
+    Mycoria Router
+  </h5>
+
+  <p class="text-secondary-emphasis fw-light font-monospace">
+    {{ .RouterIDA }}<br>
+    {{ .RouterIDB }}
+  </p>
+
+  <hr>
+
+  <ul class="nav nav-pills flex-column mb-auto">
+    <li class="nav-item">
+      <a class="nav-link link-body-emphasis" style="background: none !important;" href="/">
+        <i class="bi bi-speedometer mb-2 me-1"></i>
+        Overview
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link link-body-emphasis" style="background: none !important;" href="/discover">
+        <i class="bi bi-broadcast-pin mb-2 me-1"></i>
+        Discover
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link link-body-emphasis" style="background: none !important;" href="/mappings">
+        <i class="bi bi-at mb-2 me-1"></i>
+        Domains
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link link-body-emphasis" style="background: none !important;" href="/table">
+        <i class="bi bi-diagram-3 mb-2 me-1"></i>
+        Routing Table
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link link-body-emphasis" style="background: none !important;" href="/info">
+        <i class="bi bi-info-square mb-2 me-1"></i>
+        Info
+      </a>
+    </li>
+  </ul>
+
+  <hr>
+
+  <div class="d-flex align-items-center justify-content-between text-body-tertiary">
+    <div>
+      Mycoria {{ .Version }}<br>
+      on {{ .Hostname | default "unknown host" }}<br>
+      up {{ .Uptime.Round 1000000000 }}
+    </div>
+
+    <button type="button" id="theme-switcher" data-theme="dark" class="btn btn-outline-secondary align-self-end">
+      <i class="bi bi-moon-stars-fill"></i>
+    </button>
+  </div>
+</div>

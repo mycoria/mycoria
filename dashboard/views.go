@@ -3,6 +3,7 @@ package dashboard
 import (
 	"fmt"
 	"net/http"
+	"net/netip"
 	"runtime"
 	"runtime/debug"
 	"time"
@@ -10,17 +11,21 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mycoria/mycoria/m"
+	"github.com/mycoria/mycoria/peering"
 	"github.com/mycoria/mycoria/storage"
 )
 
 func (d *Dashboard) registerViews() {
 	api := d.instance.API()
 
-	api.HandleFunc("GET /{$}", d.statusPage)
-	api.HandleFunc("GET /status", d.statusPage)
+	api.HandleFunc("GET /{$}", d.overviewPage)
+	api.HandleFunc("GET /overview", d.overviewPage)
+	api.HandleFunc("POST /{$}", d.overviewManage)
+	api.HandleFunc("POST /overview", d.overviewManage)
+
 	api.HandleFunc("GET /discover", d.discoverPage)
 	api.HandleFunc("GET /table", d.tablePage)
-	api.HandleFunc("GET /config", d.configPage)
+	api.HandleFunc("GET /info", d.infoPage)
 
 	api.HandleFunc("GET /mappings", d.mappingsPage)
 	api.HandleFunc("POST /mappings", d.mappingsManage)
@@ -30,33 +35,70 @@ func (d *Dashboard) registerViews() {
 	api.HandleFunc("POST /open/{domain}/{router}/", d.mappingOpenSet)
 }
 
-func (d *Dashboard) statusPage(w http.ResponseWriter, r *http.Request) {
-	// TODO: Server version based on accept header.
-	// Give browser html
-	// Give terminal txt
-
-	buildInfo, _ := debug.ReadBuildInfo()
-	buildSettings := make(map[string]string)
-	for _, setting := range buildInfo.Settings {
-		buildSettings[setting.Key] = setting.Value
+func (d *Dashboard) overviewPage(w http.ResponseWriter, r *http.Request) {
+	// Create request token.
+	rToken, err := d.CreateRequestToken(
+		"manage overview",
+	)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to create request token: %s", err), http.StatusInternalServerError)
+		return
 	}
 
+	// Get runtime stats.
 	memStats := new(runtime.MemStats)
 	runtime.ReadMemStats(memStats)
 
-	d.render(w, r, "status", struct {
-		BuildInfo     *debug.BuildInfo
-		BuildSettings map[string]string
-		NumCPU        int
-		NumGoroutine  int
-		MemStats      *runtime.MemStats
+	d.render(w, r, "overview", struct {
+		*RequestToken
+		NumCPU       int
+		NumGoroutine int
+		MemStats     *runtime.MemStats
+		Peerings     []peering.Link
 	}{
-		BuildInfo:     buildInfo,
-		BuildSettings: buildSettings,
-		NumCPU:        runtime.NumCPU(),
-		NumGoroutine:  runtime.NumGoroutine(),
-		MemStats:      memStats,
+		RequestToken: rToken,
+		NumCPU:       runtime.NumCPU(),
+		NumGoroutine: runtime.NumGoroutine(),
+		MemStats:     memStats,
+		Peerings:     d.instance.Peering().GetLinks(),
 	})
+}
+
+func (d *Dashboard) overviewManage(w http.ResponseWriter, r *http.Request) {
+	// Parse from data.
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to parse form data: %s.", err), http.StatusInternalServerError)
+		return
+	}
+	nonce := r.Form.Get("nonce")
+	token := r.Form.Get("token")
+
+	// Check if request token matches.
+	if !d.CheckRequestToken(
+		nonce,
+		token,
+		"manage overview",
+	) {
+		http.Error(w, "Token mismatch.", http.StatusBadRequest)
+		return
+	}
+
+	// Execute manage action
+	switch r.Form.Get("action") {
+	case "close-link":
+		peer, err := netip.ParseAddr(r.Form.Get("peer"))
+		if err != nil {
+			http.Error(w, "Invalid peer.", http.StatusBadRequest)
+			return
+		}
+		d.instance.Peering().CloseLink(peer)
+
+	default:
+		http.Error(w, "Unknown action.", http.StatusBadRequest)
+		return
+	}
+
+	d.overviewPage(w, r)
 }
 
 func (d *Dashboard) discoverPage(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +138,19 @@ func (d *Dashboard) tablePage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (d *Dashboard) configPage(w http.ResponseWriter, r *http.Request) {
+func (d *Dashboard) infoPage(w http.ResponseWriter, r *http.Request) {
+	// Get build info.
+	buildInfo, _ := debug.ReadBuildInfo()
+	buildSettings := make(map[string]string)
+	for _, setting := range buildInfo.Settings {
+		buildSettings[setting.Key] = setting.Value
+	}
+
+	// Get runtime stats.
+	memStats := new(runtime.MemStats)
+	runtime.ReadMemStats(memStats)
+
+	// Get, redact and marshal config.
 	store, err := d.instance.Config().Store.Clone()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to clone config: %s", err), http.StatusInternalServerError)
@@ -112,9 +166,19 @@ func (d *Dashboard) configPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	d.render(w, r, "config", struct {
-		ConfigStore string
+	d.render(w, r, "info", struct {
+		BuildInfo     *debug.BuildInfo
+		BuildSettings map[string]string
+		NumCPU        int
+		NumGoroutine  int
+		MemStats      *runtime.MemStats
+		ConfigStore   string
 	}{
-		ConfigStore: string(configStoreYaml),
+		BuildInfo:     buildInfo,
+		BuildSettings: buildSettings,
+		NumCPU:        runtime.NumCPU(),
+		NumGoroutine:  runtime.NumGoroutine(),
+		MemStats:      memStats,
+		ConfigStore:   string(configStoreYaml),
 	})
 }

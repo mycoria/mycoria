@@ -1,0 +1,16 @@
+Mycoria Router
+ID: {{ .RouterID }}
+
+Status
+
+Uptime: {{ .Uptime.Round 1000000000 }}
+Started: {{ .Started.Format "02.01.06 15:04:05 MST" }}
+Host CPUs: {{ .Page.NumCPU }}
+Goroutines: {{ .Page.NumGoroutine }}
+Memory Usage: {{ .Page.MemStats.HeapAlloc | filesizeformat }}
+
+Peerings
+
+{{ range .Page.Peerings -}}
+{{ .Peer.StringExpanded }} {{ .PeeringURL }} {{ .Latency }}ms {{ .Uptime.Round 1000000000 }}
+{{ end }}

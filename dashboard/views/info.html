@@ -1,0 +1,102 @@
+{{ template "base.html" . }}
+
+{{ define "title" }}Mycoria Config{{ end }}
+
+{{ define "content" }}
+<div class="card bg-body-tertiary border-0 text-body-emphasis m-3 overflow-hidden">
+  <div class="card-header bg-body-secondary text-body-emphasis">
+    <strong>Version</strong>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm table-hover mb-0">
+      <tbody>
+        <tr>
+          <td class="bg-body-tertiary px-3">Version</td>
+          <td class="bg-body-tertiary">{{ .Version }}</td>
+        </tr>
+        <tr>
+          <td class="bg-body-tertiary px-3">From</td>
+          <td class="bg-body-tertiary">{{ .Page.BuildInfo.Path }}</td>
+        </tr>
+        <tr>
+          <td class="bg-body-tertiary px-3">Commit</td>
+          <td class="bg-body-tertiary">
+            {{ index .Page.BuildSettings "vcs.revision" }}
+            @{{ index .Page.BuildSettings "vcs.time" }}
+            dirty={{ index .Page.BuildSettings "vcs.modified" }}
+          </td>
+        </tr>
+        <tr>
+          <td class="bg-body-tertiary px-3">Go</td>
+          <td class="bg-body-tertiary">
+            {{ .Page.BuildInfo.GoVersion }}
+            {{ .Page.BuildSettings.GOOS }}
+            {{ .Page.BuildSettings.GOARCH }}
+          </td>
+        </tr>
+      </tbody>
+    </table>  
+  </div>
+</div>
+
+<div class="card bg-body-tertiary border-0 text-body-emphasis m-3 overflow-hidden">
+  <div class="card-header bg-body-secondary text-body-emphasis">
+    <strong>Environment</strong>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm table-hover mb-0">
+      <tbody>
+        <tr>
+          <td class="bg-body-tertiary px-3">Uptime</td>
+          <td class="bg-body-tertiary">{{ .Uptime.Round 1000000000 }}</td>
+        </tr>
+        <tr>
+          <td class="bg-body-tertiary px-3">Started</td>
+          <td class="bg-body-tertiary">{{ .Started.Format "02.01.06 15:04:05 MST" }}</td>
+        </tr>
+        <tr>
+          <td class="bg-body-tertiary px-3">Host CPUs</td>
+          <td class="bg-body-tertiary">{{ .Page.NumCPU }}</td>
+        </tr>
+        <tr>
+          <td class="bg-body-tertiary px-3">Goroutines</td>
+          <td class="bg-body-tertiary">{{ .Page.NumGoroutine }}</td>
+        </tr>
+        <tr>
+          <td class="bg-body-tertiary px-3">Memory Usage</td>
+          <td class="bg-body-tertiary">{{ .Page.MemStats.HeapAlloc | filesizeformat }}</td>
+        </tr>
+      </tbody>
+    </table>  
+  </div>
+</div>
+
+<div class="card bg-body-tertiary border-0 text-body-emphasis m-3">
+  <div class="card-header bg-body-secondary text-body-emphasis">
+    <strong>Config</strong>
+  </div>
+  <div class="card-body">
+    <pre>{{ .Page.ConfigStore }}</pre>
+  </div>
+</div>
+
+<div class="card bg-body-tertiary border-0 text-body-emphasis m-3 overflow-hidden">
+  <div class="card-header bg-body-secondary text-body-emphasis">
+    <strong>Build Info</strong>
+  </div>
+  <div class="card-body p-0">
+    <table class="table table-sm table-hover mb-0">
+      <tbody>
+        {{ range $key, $value := .Page.BuildSettings }}
+        <tr>
+          <td class="bg-body-tertiary px-3">{{ $key }}</td>
+          <td class="bg-body-tertiary">{{ $value }}</td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
+    </table>  
+  </div>
+</div>
+
+{{ end }}

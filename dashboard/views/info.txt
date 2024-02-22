@@ -1,5 +1,4 @@
-Mycoria Router
-ID: {{ .RouterID }}
+Info
 
 Version
 
@@ -15,6 +14,10 @@ Started: {{ .Started.Round 1000000000 }}
 Host CPUs: {{ .Page.NumCPU }}
 Goroutines: {{ .Page.NumGoroutine }}
 Memory Usage: {{ .Page.MemStats.HeapAlloc | filesizeformat }}
+
+Config
+
+{{ .Page.ConfigStore }}
 
 Build Info
 

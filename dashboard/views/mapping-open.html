@@ -3,39 +3,25 @@
 {{ define "title" }}Mycoria Open Domain{{ end }}
 
 {{ define "content" }}
-<div class="block has-text-centered pt-6">
+<div class="container-fluid p-0 my-5 text-center">
   
-  <section class="section">
-    <h1 class="title">Access {{ .Page.MapDomain }}</h1>
-  </section>
+  <h1>Access {{ .Page.MapDomain }}</h1>
 
   {{ if .Page.Error }}
-  <section class="hero is-danger">
-    <div class="hero-body">
-      <p class="title">
-        Error: {{ .Page.Error }}
-      </p>
-    </div>
-  </section>
+  <div class="h2 p-5 my-5 bg-danger bg-opacity-75 text-body-emphasis">
+    Error: {{ .Page.Error }}
+  </div>
   {{ else if ne .Page.MappedRouter "" }}
-  <section class="hero is-warning">
-    <div class="hero-body">
-      <p class="title">
-        Change: {{ .Page.MapDomain }} ➢ {{ .Page.MapRouter }}
-      </p>
-    </div>
-  </section>
+  <div class="h2 p-5 my-5 bg-warning bg-opacity-75 text-body-emphasis">
+    Change: {{ .Page.MapDomain }} ➢ {{ .Page.MapRouter }}
+  </div>
   {{ else }}
-  <section class="hero is-success">
-    <div class="hero-body">
-      <p class="title">
-        New: {{ .Page.MapDomain }} ➢ {{ .Page.MapRouter }}
-      </p>
-    </div>
-  </section>
+  <div class="h2 p-5 my-5 bg-success bg-opacity-75 text-body-emphasis">
+    New: {{ .Page.MapDomain }} ➢ {{ .Page.MapRouter }}
+  </div>
   {{ end }}
 
-  <section class="section">
+  <div>
     <form action="" method="POST">
       <!-- Hidden Fields -->
       <input type="hidden" name="nonce" value="{{ .Page.Nonce }}">
@@ -43,20 +29,20 @@
       
       <!-- Submit Button -->
       <button type="submit"
-        class="button {{ if .Page.MappedRouter }}is-warning{{ else }}is-success{{ end }}">
+        class="btn {{ if .Page.MappedRouter }}btn-warning{{ else }}btn-success{{ end }}">
         Set and Open
       </button>
     </form>
-  </section>
+  </div>
   
   {{ if ne .Page.MapDomain .Page.MapDomainCleaned }}
-  <section class="section">
-    <div class="container is-max-desktop">
-      <div class="notification is-info">
-        <strong>{{ .Page.MapDomain }}</strong> is an IDN domain name and is also represented as <strong>{{ .Page.MapDomainCleaned }}</strong>
-      </div>
+  <div class="d-flex justify-content-center">
+    <div class="alert alert-info my-5 bg-transparent text-body-emphasis" role="alert">
+      <strong>{{ .Page.MapDomain }}</strong>
+      is an internationalized domain name (IDN) and is also represented as
+      <strong>{{ .Page.MapDomainCleaned }}</strong>
     </div>
-  </section>
+  </div>
   {{ end }}
 
 </div>
