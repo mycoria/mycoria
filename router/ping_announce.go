@@ -211,24 +211,30 @@ func (h *AnnouncePingHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingH
 	signingContext := h.signingContext(f)
 forwardToPeers:
 	for _, sendLink := range forwardTo {
-		if sendLink == nil {
-			continue
-		}
+		// Check if the announcement should be forwarded to this link.
+		switch {
+		case sendLink == nil:
+			// Check if link is valid.
+			continue forwardToPeers
 
-		// Do not send to announcing router.
-		if sendLink.Peer() == f.SrcIP() {
-			continue
-		}
+		case sendLink.Lite():
+			// Do not send announcement to lite mode routers.
+			continue forwardToPeers
 
-		// Do not send back to link where it came from.
-		if sendLink.Peer() == recvLink.Peer() {
-			continue
-		}
+		case sendLink.Peer() == f.SrcIP():
+			// Do not send to announcing router.
+			continue forwardToPeers
 
-		// Do not send to peers which are already in the hops.
-		for _, hop := range hops {
-			if sendLink.Peer() == hop.Router {
-				continue forwardToPeers
+		case sendLink.Peer() == recvLink.Peer():
+			// Do not send back to link where it came from.
+			continue forwardToPeers
+
+		default:
+			// Do not send to peers which are already in the hops.
+			for _, hop := range hops {
+				if sendLink.Peer() == hop.Router {
+					continue forwardToPeers
+				}
 			}
 		}
 

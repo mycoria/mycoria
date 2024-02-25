@@ -26,7 +26,7 @@ const (
 	minChallengeSize = 16
 )
 
-type peeringRequestState struct {
+type peeringRequestState struct { //nolint:maligned
 	peering *Peering
 
 	// step designates the current peering step:
@@ -41,12 +41,14 @@ type peeringRequestState struct {
 
 	remoteIP      netip.Addr
 	remoteVersion string
+	remoteLite    bool
 	challenge     []byte
 }
 
 type peeringRequest struct {
 	RouterVersion string          `cbor:"v,omitempty"  json:"v,omitempty"`
 	Universe      string          `cbor:"u,omitempty"  json:"u,omitempty"`
+	LiteMode      bool            `cbor:"lm,omitempty" json:"lm,omitempty"`
 	Address       m.PublicAddress `cbor:"a,omitempty"  json:"a,omitempty"`
 	Challenge     []byte          `cbor:"c,omitempty"  json:"c,omitempty"`
 	LinkVersion   int             `cbor:"lv,omitempty" json:"lv,omitempty"`
@@ -84,6 +86,7 @@ func (p *Peering) createPeeringRequest(client bool) (*peeringRequestState, frame
 	r := &peeringRequest{
 		RouterVersion: p.instance.Version(),
 		Universe:      p.instance.Config().Router.Universe,
+		LiteMode:      p.instance.Config().Router.Lite,
 		Address:       p.instance.Identity().PublicAddress,
 		Challenge:     challenge,
 		LinkVersion:   1,
@@ -213,6 +216,7 @@ func (state *peeringRequestState) handlePeeringRequest(in frame.Frame) (frame.Fr
 	// Populate state.
 	state.remoteIP = r.Address.IP
 	state.remoteVersion = r.RouterVersion
+	state.remoteLite = r.LiteMode
 
 	// Start building response.
 	resp := &peeringResponse{}

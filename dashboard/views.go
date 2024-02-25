@@ -134,9 +134,11 @@ func (d *Dashboard) tablePage(w http.ResponseWriter, r *http.Request) {
 	d.render(w, r, "table", struct {
 		Table string
 		Stub  bool
+		Lite  bool
 	}{
 		Table: d.instance.Router().Table().Format(),
 		Stub:  d.instance.Config().Router.Stub,
+		Lite:  d.instance.Config().Router.Lite,
 	})
 }
 

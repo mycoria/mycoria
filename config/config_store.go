@@ -49,6 +49,12 @@ type Router struct { //nolint:maligned
 	// Stub runs the router in stub mode. It will not relay router announcements
 	// and will appear as a dead end to other routers.
 	Stub bool `json:"stub,omitempty" yaml:"stub,omitempty"`
+
+	// Lite runs the router in lite mode. It will attempt to reduce any
+	// non-essential activity and traffic.
+	// Behavior will slightly change over time and also depends on other routers
+	// playing along - do not use for workarounds.
+	Lite bool `json:"lite,omitempty" yaml:"lite,omitempty"`
 }
 
 // FriendConfig is a trusted router in the network.

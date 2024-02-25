@@ -42,6 +42,9 @@ type Link interface {
 	// Outgoing returns whether the connection was initiated by this router.
 	Outgoing() bool
 
+	// Lite returns whether the connected router is in lite mode.
+	Lite() bool
+
 	// SendPriority sends a priority frame to the peer.
 	SendPriority(f frame.Frame) error
 
@@ -79,7 +82,7 @@ type Link interface {
 }
 
 // LinkBase implements common functions to comply with the Link interface.
-type LinkBase struct {
+type LinkBase struct { //nolint:maligned
 	// conn is the actual underlying connection.
 	conn net.Conn
 	// encSession is the encryption session.
@@ -103,6 +106,9 @@ type LinkBase struct {
 	peeringURL *m.PeeringURL
 	// outgoing specifies whether the link was initiated by this router.
 	outgoing bool
+	// lite specifies whether the connected router is in lite mode.
+	lite bool
+
 	// started holds the time when the link was created.
 	started time.Time
 
@@ -187,6 +193,11 @@ func (link *LinkBase) PeeringURL() *m.PeeringURL {
 // Outgoing returns whether the connection was initiated by this router.
 func (link *LinkBase) Outgoing() bool {
 	return link.outgoing
+}
+
+// Lite returns whether the connected router is in lite mode.
+func (link *LinkBase) Lite() bool {
+	return link.lite
 }
 
 // Started returns when the link was created.
@@ -578,6 +589,7 @@ func (link *LinkBase) setupWorker(w *mgr.WorkerCtx) error {
 	if err == nil {
 		// Assign peer and geomarked country.
 		link.peer = peeringState.session.Address().IP
+		link.lite = peeringState.remoteLite
 		cml, cmlErr := m.LookupCountryMarker(link.peer)
 		if cmlErr == nil && cml != nil {
 			link.geoMark = fmt.Sprintf("%s (%s)", cml.Country, cml.Continent)
@@ -621,6 +633,7 @@ func (link *LinkBase) handleSetup(mgr *mgr.Manager) (*LinkBase, error) {
 	if err == nil {
 		// Assign peer and geomarked country.
 		link.peer = peeringState.session.Address().IP
+		link.lite = peeringState.remoteLite
 		cml, cmlErr := m.LookupCountryMarker(link.peer)
 		if cmlErr == nil && cml != nil {
 			link.geoMark = fmt.Sprintf("%s (%s)", cml.Country, cml.Continent)

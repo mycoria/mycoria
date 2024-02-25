@@ -8,7 +8,10 @@
     <div class="me-auto">
       <strong>Routing Table</strong>
     </div>
-    
+
+    {{ if .Page.Lite }}
+    <div class="text-danger ms-3">Lite Mode: Unsubscribed from Routes</div>
+    {{ end }}
     {{ if .Page.Stub }}
     <div class="text-warning ms-3">Stub</div>
     {{ end }}

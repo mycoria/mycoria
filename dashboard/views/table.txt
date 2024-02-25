@@ -1,3 +1,7 @@
 Routing Table
+{{- if .Page.Lite }}
+  [Lite Mode: Unsubscribed from Routes]{{ end }}
+{{- if .Page.Stub }}
+  [Stub]{{ end }}
 
 {{ .Page.Table }}

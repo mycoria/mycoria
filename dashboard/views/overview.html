@@ -45,6 +45,7 @@
       <tbody>
         <tr>
           <th scope="col" class="bg-body-tertiary">Router</th>
+          <th scope="col" class="bg-body-tertiary"></th>
           <th scope="col" class="bg-body-tertiary">GeoMarking</th>
           <th scope="col" class="bg-body-tertiary">Peering</th>
           <th scope="col" class="bg-body-tertiary">Latency</th>
@@ -57,6 +58,11 @@
         <tr>
           <td class="bg-body-tertiary">
             {{ .Peer.StringExpanded }}
+          </td>
+          <td class="bg-body-tertiary">
+            {{ if .Lite }}
+            <span class="text-warning">Lite</span>
+            {{ end }}
           </td>
           <td class="bg-body-tertiary">
             {{ .GeoMark }}
