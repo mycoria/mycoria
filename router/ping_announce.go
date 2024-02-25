@@ -187,6 +187,11 @@ func (h *AnnouncePingHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingH
 		}
 	}
 
+	// Never forward if router is a stub.
+	if h.r.instance.Config().Router.Stub {
+		return nil
+	}
+
 	// Select peers to forward to.
 	var forwardTo []peering.Link
 	if f.DstIP() == m.RouterAddress {

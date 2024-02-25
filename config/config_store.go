@@ -45,6 +45,10 @@ type Router struct { //nolint:maligned
 
 	// Bootstrap holds peering URLs that the router uses to bootstrap to the network.
 	Bootstrap []string `json:"bootstrap,omitempty" yaml:"bootstrap,omitempty"`
+
+	// Stub runs the router in stub mode. It will not relay router announcements
+	// and will appear as a dead end to other routers.
+	Stub bool `json:"stub,omitempty" yaml:"stub,omitempty"`
 }
 
 // FriendConfig is a trusted router in the network.
