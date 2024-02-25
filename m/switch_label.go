@@ -229,14 +229,15 @@ func (sp *SwitchPath) CalculateTotals() {
 	switch len(sp.Hops) {
 	case 0, 1:
 		// TODO: 0, 1 is invalid
+		// Direct peers have 0 hops.
 		sp.TotalHops = 1
 	default:
-		if len(sp.Hops)-1 <= 255 {
+		if len(sp.Hops)-1 <= 254 { // Leave spare for "max" searches.
 			sp.TotalHops = uint8(len(sp.Hops) - 1)
 		} else {
 			// TotalHops is used for route selection and cleaning,
 			// an inaccurate value won't break the system too much.
-			sp.TotalHops = 255
+			sp.TotalHops = 254
 		}
 	}
 
@@ -253,12 +254,12 @@ func (sp *SwitchPath) CalculateTotals() {
 	switch {
 	case delay == 0:
 		// Do not reset existing TotalDelay, in order for to be able use the existing value.
-	case delay <= 65535:
+	case delay <= 65534: // Leave spare for "max" searches.
 		sp.TotalDelay = uint16(delay)
 	default:
 		// TotalDelay is used for route selection and cleaning,
 		// an inaccurate value won't break the system too much.
-		sp.TotalDelay = 65535
+		sp.TotalDelay = 65534
 	}
 }
 

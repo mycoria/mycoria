@@ -104,13 +104,13 @@ func GetRoutablePrefixesFor(myIP netip.Addr, myPrefix netip.Prefix) []RoutablePr
 			BasePrefix:       RoutingAddressPrefix,
 			RoutingBits:      ContinentPrefixBits,
 			EntryTTL:         3 * time.Hour,
-			EntriesPerPrefix: 16, // 16 * 2³ = 128 total max entries
+			EntriesPerPrefix: 32, // 16 * 2³ = 256 total max entries
 		},
 		{ // Special Region Prefixes.
 			BasePrefix:       SpecialPrefix,
 			RoutingBits:      16,
 			EntryTTL:         3 * time.Hour,
-			EntriesPerPrefix: 16, // 16 * 2⁴ = 256 total max entries
+			EntriesPerPrefix: 32, // 16 * 2⁴ = 512 total max entries
 		},
 	}
 
@@ -122,7 +122,7 @@ func GetRoutablePrefixesFor(myIP netip.Addr, myPrefix netip.Prefix) []RoutablePr
 				BasePrefix:       myContinentPrefix,
 				RoutingBits:      RegionPrefixBits,
 				EntryTTL:         3 * time.Hour,
-				EntriesPerPrefix: 32, // 32 * 2⁴ = 512 total max entries
+				EntriesPerPrefix: 64, // 64 * 2⁴ = 1024 total max entries
 			})
 		}
 	}

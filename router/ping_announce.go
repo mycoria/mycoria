@@ -143,12 +143,12 @@ func (h *AnnouncePingHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingH
 			ReturnLabel:  0,
 		})
 		// Add stacked hops in reverse order.
-		for i := len(hops) - 1; i >= 0; i-- {
+		for _, hop := range hops {
 			switchPath.Hops = append(switchPath.Hops, m.SwitchHop{
-				Router:       hops[i].Router,
-				Delay:        hops[i].Delay,
-				ForwardLabel: hops[i].ForwardLabel,
-				ReturnLabel:  hops[i].ReturnLabel,
+				Router:       hop.Router,
+				Delay:        hop.Delay,
+				ForwardLabel: hop.ForwardLabel,
+				ReturnLabel:  hop.ReturnLabel,
 			})
 		}
 		// Add announcing router as last.
@@ -159,33 +159,32 @@ func (h *AnnouncePingHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingH
 			ReturnLabel:  msg.ReturnLabel,
 		})
 
-		err = h.r.table.AddRoute(m.RoutingTableEntry{
+		added, err := h.r.table.AddRoute(m.RoutingTableEntry{
 			DstIP:   f.SrcIP(),
 			NextHop: recvLink.Peer(),
 			Path:    switchPath,
 			Source:  m.RouteSourceGossip,
 			Expires: msg.Expires,
 		})
-		if err != nil {
+		switch {
+		case err != nil:
 			w.Warn(
 				"failed to add entry to routing table",
 				"dst", f.SrcIP(),
 				"err", err,
 			)
-		} else {
+		case added:
 			w.Info(
 				"updated routing entry",
 				"router", f.SrcIP(),
 				"nexthop", recvLink.Peer(),
-				"hops", len(hops),
+				"hops", switchPath.TotalHops,
 			)
-
-			// DEBUG:
-			// fmt.Println(h.r.table.Format())
+		default:
+			// Not added to routing table.
+			// Do not forward.
+			return nil
 		}
-
-		// TODO: AddRoute should report back if the route is good enough.
-		// If not, do not forward!
 	}
 
 	// Select peers to forward to.

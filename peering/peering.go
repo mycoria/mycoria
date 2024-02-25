@@ -136,7 +136,7 @@ func (p *Peering) AddLink(link Link) error {
 	p.linksLock.Lock()
 	defer p.linksLock.Unlock()
 
-	err := p.instance.RoutingTable().AddRoute(m.RoutingTableEntry{
+	_, err := p.instance.RoutingTable().AddRoute(m.RoutingTableEntry{
 		DstIP:   link.Peer(),
 		NextHop: link.Peer(),
 		Source:  m.RouteSourcePeer,

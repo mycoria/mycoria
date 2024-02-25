@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go4.org/netipx"
 )
 
 // RoutingTable is a routing table.
@@ -99,11 +101,11 @@ func NewRoutingTable(cfg RoutingTableConfig) *RoutingTable {
 }
 
 // AddRoute adds the given route to the routing table.
-func (rt *RoutingTable) AddRoute(entry RoutingTableEntry) error {
+func (rt *RoutingTable) AddRoute(entry RoutingTableEntry) (added bool, err error) {
 	// Get routable prefix.
 	rp, ok := rt.getRoutablePrefixConfig(entry.DstIP)
 	if !ok {
-		return errors.New("destination address is not routable by this table")
+		return false, errors.New("destination address is not routable by this table")
 	}
 
 	// Apply defaults from routable prefix.
@@ -125,28 +127,28 @@ func (rt *RoutingTable) AddRoute(entry RoutingTableEntry) error {
 	case RouteSourceUnknown:
 		fallthrough
 	default:
-		return fmt.Errorf("unknown routing source %d", entry.Source)
+		return false, fmt.Errorf("unknown routing source %d", entry.Source)
 	}
 
 	// Check if entry has all required fields.
 	switch {
 	case !entry.DstIP.IsValid():
-		return errors.New("dst ip is invalid/missing")
+		return false, errors.New("dst ip is invalid/missing")
 	case !entry.NextHop.IsValid():
-		return errors.New("next hop is invalid/missing")
+		return false, errors.New("next hop is invalid/missing")
 	case !entry.RoutingPrefix.IsValid():
-		return errors.New("routing prefix is invalid/missing")
+		return false, errors.New("routing prefix is invalid/missing")
 	case entry.Source != RouteSourcePeer && len(entry.Path.Hops) < 2:
-		return errors.New("missing or incomplete switch path")
+		return false, errors.New("missing or incomplete switch path")
 	}
 
 	// Check expiry. Be graceful with routers that have time lag.
 	if entry.Source != RouteSourcePeer {
 		switch {
 		case entry.Expires.IsZero():
-			return errors.New("missing expiration")
+			return false, errors.New("missing expiration")
 		case time.Since(entry.Expires) > time.Hour:
-			return errors.New("already expired")
+			return false, errors.New("already expired")
 		case time.Until(entry.Expires) < 10*time.Minute:
 			// Raise expire to at least 10 minutes.
 			entry.Expires = time.Now().Add(10 * time.Minute)
@@ -154,9 +156,9 @@ func (rt *RoutingTable) AddRoute(entry RoutingTableEntry) error {
 	}
 
 	// Finish processing the switch path.
-	err := entry.Path.BuildBlocks()
+	err = entry.Path.BuildBlocks()
 	if err != nil {
-		return fmt.Errorf("failed to build switch blocks: %w", err)
+		return false, fmt.Errorf("failed to build switch blocks: %w", err)
 	}
 	entry.Path.CalculateTotals()
 
@@ -164,24 +166,162 @@ func (rt *RoutingTable) AddRoute(entry RoutingTableEntry) error {
 	rt.lock.Lock()
 	defer rt.lock.Unlock()
 
-	// Search for entry, get index where it is or should be.
-	index, ok := slices.BinarySearchFunc[[]*RoutingTableEntry, *RoutingTableEntry, *RoutingTableEntry](
+	// Always add peers.
+	if entry.Source == RouteSourcePeer {
+		// Get insert index.
+		insertIndex, _ := slices.BinarySearchFunc[[]*RoutingTableEntry, *RoutingTableEntry, *RoutingTableEntry](
+			rt.entries,
+			&entry,
+			rt.stdSort,
+		)
+		// Insert
+		rt.entries = slices.Insert[[]*RoutingTableEntry, *RoutingTableEntry](
+			rt.entries, insertIndex, &entry,
+		)
+		return true, nil
+	}
+
+	// Get destination section.
+	start, end := rt.getDstSection(entry.DstIP)
+	if start >= end {
+		// We don't have this destination yet.
+		// Add it as a new destination.
+		return rt.addNewDestination(entry, rp)
+	}
+
+	// Check if we have this exact route already.
+	for i := start; i < end; i++ {
+		if rt.entries[i].RouteEquals(&entry) {
+			// Replace entry.
+			rt.entries[i] = &entry
+			// Sort section.
+			slices.SortFunc[[]*RoutingTableEntry, *RoutingTableEntry](
+				rt.entries[start:end],
+				rt.stdSort,
+			)
+			// Return as added.
+			return true, nil
+		}
+	}
+
+	// We have a new route for a known destination.
+
+	// If we don't have 3 routes to this destination yet, add it.
+	if end-start < 3 {
+		// Get insert index.
+		insertIndex, _ := slices.BinarySearchFunc[[]*RoutingTableEntry, *RoutingTableEntry, *RoutingTableEntry](
+			rt.entries,
+			&entry,
+			rt.stdSort,
+		)
+		// Insert
+		rt.entries = slices.Insert[[]*RoutingTableEntry, *RoutingTableEntry](
+			rt.entries, insertIndex, &entry,
+		)
+		return true, nil
+	}
+
+	// Check if the entry is good enough to make it into the top 3.
+	if rt.stdSort(&entry, rt.entries[start+2]) < 0 {
+		// Replace third entry.
+		rt.entries[start+2] = &entry
+		// Sort section.
+		slices.SortFunc[[]*RoutingTableEntry, *RoutingTableEntry](
+			rt.entries[start:end],
+			rt.stdSort,
+		)
+		// Return as added.
+		return true, nil
+	}
+
+	// Entry does not meet any criteria for addding.
+	return false, nil
+}
+
+func (rt *RoutingTable) addNewDestination(entry RoutingTableEntry, rp RoutablePrefix) (added bool, err error) {
+	// Gossip routes are limited per prefix, check the limit.
+	if entry.Source == RouteSourceGossip {
+		// Get prefix section.
+		start, end := rt.getPrefixSection(entry.RoutingPrefix)
+		if end-start > rp.EntriesPerPrefix*2 {
+			// We already have 2 times the entries we want for this prefix.
+			return false, nil
+		}
+	}
+
+	// If permitted to add route, go ahead.
+
+	// Get insert index.
+	insertIndex, _ := slices.BinarySearchFunc[[]*RoutingTableEntry, *RoutingTableEntry, *RoutingTableEntry](
 		rt.entries,
 		&entry,
 		rt.stdSort,
 	)
-
-	// If entry already exists, update it.
-	if ok {
-		rt.entries[index] = &entry
-		return nil
-	}
-
-	// Otherwise, insert it.
+	// Insert
 	rt.entries = slices.Insert[[]*RoutingTableEntry, *RoutingTableEntry](
-		rt.entries, index, &entry,
+		rt.entries, insertIndex, &entry,
 	)
-	return nil
+	return true, nil
+}
+
+func (rt *RoutingTable) getDstSection(dst netip.Addr) (startIndex, endIndex int) {
+	// Find start index.
+	startIndex, _ = slices.BinarySearchFunc[[]*RoutingTableEntry, *RoutingTableEntry, *RoutingTableEntry](
+		rt.entries,
+		&RoutingTableEntry{
+			DstIP: dst,
+			Path: SwitchPath{
+				TotalDelay: 0, // Lower than possible normal values.
+				TotalHops:  0, // Lower than possible normal values.
+			},
+		},
+		rt.stdSort,
+	)
+
+	// Find end index.
+	endIndex, _ = slices.BinarySearchFunc[[]*RoutingTableEntry, *RoutingTableEntry, *RoutingTableEntry](
+		rt.entries,
+		&RoutingTableEntry{
+			DstIP: dst,
+			Path: SwitchPath{
+				TotalDelay: 65535, // Higher than possible normal values.
+				TotalHops:  255,   // Higher than possible normal values.
+			},
+		},
+		rt.stdSort,
+	)
+
+	return
+}
+
+func (rt *RoutingTable) getPrefixSection(prefix netip.Prefix) (startIndex, endIndex int) {
+	// Find start index.
+	startIndex, _ = slices.BinarySearchFunc[[]*RoutingTableEntry, *RoutingTableEntry, *RoutingTableEntry](
+		rt.entries,
+		&RoutingTableEntry{
+			DstIP: prefix.Masked().Addr(),
+			Path: SwitchPath{
+				TotalDelay: 0, // Lower than possible normal values.
+				TotalHops:  0, // Lower than possible normal values.
+			},
+		},
+		rt.stdSort,
+	)
+
+	// Find end index.
+	endIndex, _ = slices.BinarySearchFunc[[]*RoutingTableEntry, *RoutingTableEntry, *RoutingTableEntry](
+		rt.entries,
+		&RoutingTableEntry{
+			DstIP: netipx.PrefixLastIP(prefix),
+			Path: SwitchPath{
+				TotalDelay: 65535, // Higher than possible normal values.
+				TotalHops:  255,   // Higher than possible normal values.
+			},
+		},
+		rt.stdSort,
+	)
+
+	return
 }
 
 // LookupNearest returns the best matching table entry for the given destination.
@@ -455,12 +595,14 @@ func (rt *RoutingTable) sortForCleaning() {
 			case a.RoutingPrefix != b.RoutingPrefix:
 				// Group gossip entries by routing prefix.
 				return a.RoutingPrefix.Addr().Compare(b.RoutingPrefix.Addr())
-			case a.Path.TotalDelay != b.Path.TotalDelay:
-				// Sort by delay to distance.
-				return int(a.Path.TotalDelay) - int(b.Path.TotalDelay)
+
 			case a.Path.TotalHops != b.Path.TotalHops:
 				// Sort by hop distance to dst.
 				return int(a.Path.TotalHops) - int(b.Path.TotalHops)
+
+			case a.Path.TotalDelay != b.Path.TotalDelay:
+				// Sort by delay to distance.
+				return int(a.Path.TotalDelay) - int(b.Path.TotalDelay)
 			}
 
 			// When we have the same routing prefix with equal hops and latency,
@@ -491,7 +633,7 @@ func (rt *RoutingTable) stdSort(a, b *RoutingTableEntry) int {
 		return int(a.Path.TotalHops) - int(b.Path.TotalHops)
 
 	case a.Path.TotalDelay != b.Path.TotalDelay:
-		// Sort by latency to distance.
+		// Sort by latency to dst.
 		return int(a.Path.TotalDelay) - int(b.Path.TotalDelay)
 	}
 
@@ -504,8 +646,31 @@ func (rt *RoutingTable) stdSort(a, b *RoutingTableEntry) int {
 		}
 	}
 
-	// All hops are the same - this is the exact same route!
+	// Same dst, route, and latency.
+	// Note: This does not deduplicate identical routes, as the latency may change.
 	return 0
+}
+
+// RouteEquals returns whether the routes match.
+func (a *RoutingTableEntry) RouteEquals(b *RoutingTableEntry) bool {
+	// Check metadata.
+	switch {
+	case a.DstIP != b.DstIP:
+		return false
+	case a.Path.TotalHops != b.Path.TotalHops:
+		return false
+	case len(a.Path.Hops) != len(b.Path.Hops):
+		return false
+	}
+
+	// Check actual route.
+	for i := 1; i < len(a.Path.Hops)-1; i++ {
+		if a.Path.Hops[i].Router != b.Path.Hops[i].Router {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (rt *RoutingTable) sortForRouting() {
@@ -521,9 +686,6 @@ func (rt *RoutingTable) Format() string {
 	rt.lock.Lock()
 	defer rt.lock.Unlock()
 
-	rt.sortForCleaning()
-	defer rt.sortForRouting()
-
 	var (
 		b        = &strings.Builder{}
 		previous *RoutingTableEntry
@@ -531,7 +693,7 @@ func (rt *RoutingTable) Format() string {
 	for i, rte := range rt.entries {
 		if previous == nil || rte.RoutingPrefix != previous.RoutingPrefix {
 			previous = rte
-			fmt.Fprintln(b, rte.RoutingPrefix)
+			fmt.Fprintln(b, formatPrefix(rte.RoutingPrefix))
 		}
 
 		cc := "?"
@@ -541,22 +703,81 @@ func (rt *RoutingTable) Format() string {
 
 		switch {
 		case rte.Source == RouteSourcePeer:
-			fmt.Fprintf(b, "  %d: %s %s cc=%s hops=%d\n", i+1,
+			fmt.Fprintf(b, "  %d: %s   %s cc=%s hops=%d\n", i+1,
 				rte.Source, rte.DstIP, cc, rte.Path.TotalHops,
 			)
 		default:
 			fmt.Fprintf(b,
-				"  %d: %s %s cc=%s hops=%d via=%x\n", i+1,
+				"  %d: %s %s cc=%s hops=%d lat=%dms next=%x via=%s\n", i+1,
 				rte.Source,
 				rte.DstIP,
 				cc,
 				rte.Path.TotalHops,
+				rte.Path.TotalDelay,
 				rte.Path.Hops[0].ForwardLabel,
+				formatRelays(rte.Path.Hops),
 			)
 		}
 	}
 
 	return b.String()
+}
+
+func formatPrefix(prefix netip.Prefix) string {
+	var info string
+	switch GetAddressType(prefix.Addr()) {
+	case TypeInvalid:
+		info = "invalid address range"
+	case TypeReserved:
+		info = "reserved address range"
+	case TypePrivacy:
+		info = "private address range"
+	case TypeRoaming:
+		info = "special range: roaming"
+	case TypeOrganization:
+		info = "special range: organizations"
+	case TypeAnycast:
+		info = "special range: anycast"
+	case TypeExperiment:
+		info = "special range: experiments"
+	case TypeInternal:
+		info = "internal range"
+
+	case TypeGeoMarked:
+		cml, err := LookupCountryMarker(prefix.Addr())
+		if err != nil {
+			info = "unknown geo marked address range"
+		} else {
+			switch {
+			case prefix.Bits() == ContinentPrefixBits:
+				info = "geomarked world region " + cml.Continent
+			case prefix.Bits() == RegionPrefixBits:
+				info = "geomarked continental region " +
+					cml.Continent + "-" + cml.Region
+			default:
+				info = "geomarked country " + cml.Country +
+					" (" + cml.Continent + "-" + cml.Region + ")"
+			}
+		}
+	}
+
+	if info != "" {
+		return fmt.Sprintf("%s - %s", prefix, info)
+	}
+	return prefix.String()
+}
+
+func formatRelays(hops []SwitchHop) string {
+	if len(hops) <= 2 {
+		return "none"
+	}
+
+	parts := make([]string, 0, len(hops)-2)
+	for _, hop := range hops[1 : len(hops)-1] {
+		s := hop.Router.StringExpanded()
+		parts = append(parts, s[len(s)-4:])
+	}
+	return strings.Join(parts, ",")
 }
 
 func (rt *RoutingTable) getRoutablePrefixConfig(ip netip.Addr) (rp RoutablePrefix, ok bool) {

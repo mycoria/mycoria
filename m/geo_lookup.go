@@ -10,6 +10,7 @@ type CountryMarkerLookup struct {
 	BaseIP    netip.Addr
 	Prefix    netip.Prefix
 	Continent string
+	Region    string
 	Country   string
 }
 
@@ -29,6 +30,7 @@ func init() {
 			BaseIP:    baseIP,
 			Prefix:    prefix,
 			Continent: cgm.ContinentCode,
+			Region:    cgm.RegionCode,
 			Country:   cc,
 		})
 	}

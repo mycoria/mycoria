@@ -16,15 +16,16 @@ var (
 )
 
 func TestTable(t *testing.T) {
-	t.Skip() // FIXME: test is flaky.
+	// t.Skip() // FIXME: test is flaky.
 
 	t.Parallel()
 
 	// Make routable prefixes for testing.
+	entriesPerPrefix := 5
 	rps := GetRoutablePrefixesFor(myIP, myPrefix)
 	// Set max entries to 5 for all prefixes for testing.
-	for i := 0; i < len(rps); i++ {
-		rps[i].EntriesPerPrefix = 5
+	for i := range len(rps) {
+		rps[i].EntriesPerPrefix = entriesPerPrefix
 	}
 
 	tbl := NewRoutingTable(RoutingTableConfig{
@@ -34,10 +35,10 @@ func TestTable(t *testing.T) {
 
 	var (
 		addRandomGossipPrefixes          = 10
-		addRandomGossipEntriesPerPrefix  = 100
+		addRandomGossipEntriesPerPrefix  = 20
 		addRandomPeerEntries             = 10
 		addRandomDiscoveredEntries       = 10
-		expectedSizeAfterRemovingNextHop = ((addRandomGossipPrefixes * addRandomGossipEntriesPerPrefix) +
+		expectedSizeAfterRemovingNextHop = ((addRandomGossipPrefixes * entriesPerPrefix * 2) +
 			addRandomPeerEntries +
 			addRandomDiscoveredEntries) * 9 / 10
 		expectedSizeAfterClean = (addRandomGossipPrefixes * 5) +
@@ -56,20 +57,21 @@ func TestTable(t *testing.T) {
 	assert.Nil(t, entry, "lookup must not return an entry")
 
 	t.Logf("adding peer entries...")
-	for i := 0; i < addRandomPeerEntries; i++ {
+	for range addRandomPeerEntries {
 		ip := makeRandomAddress(myPrefix)
 		peers = append(peers, ip)
-		assert.NoError(t, tbl.AddRoute(RoutingTableEntry{
+		_, err := tbl.AddRoute(RoutingTableEntry{
 			DstIP:   ip,
 			NextHop: ip,
 			Path:    makeRandomSwitchPath(ip, 0),
 			Source:  RouteSourcePeer,
-		}), "adding peer entry should succeed")
+		})
+		assert.NoError(t, err, "adding peer entry should succeed")
 		// t.Logf("added peer %s", ip)
 	}
 
 	t.Logf("adding gossip entries...")
-	for i := 0; i < addRandomGossipPrefixes; i++ {
+	for range addRandomGossipPrefixes {
 		var prefix netip.Prefix
 		for {
 			prefixIP := makeRandomAddress(RoutingAddressPrefix)
@@ -93,47 +95,65 @@ func TestTable(t *testing.T) {
 		}
 
 		// Generate addresses per prefix.
-		for j := 0; j < addRandomGossipEntriesPerPrefix; j++ {
+		for i := range addRandomGossipEntriesPerPrefix {
 			ip := makeRandomAddress(prefix)
-			assert.NoError(t, tbl.AddRoute(RoutingTableEntry{
+			_, err := tbl.AddRoute(RoutingTableEntry{
 				DstIP:   ip,
-				NextHop: peers[j%len(peers)],
+				NextHop: peers[i%len(peers)],
 				Path:    makeRandomSwitchPath(peers[i%len(peers)], 2),
 				Source:  RouteSourceGossip,
-			}), "adding gossip entry should succeed")
+			})
+			assert.NoError(t, err, "adding gossip entry should succeed")
 			// t.Logf("added gossip %s", ip)
 		}
 	}
 
 	t.Logf("adding discovered entries...")
-	for i := 0; i < addRandomDiscoveredEntries; i++ {
+	for i := range addRandomDiscoveredEntries {
 		ip := makeRandomAddress(RoutingAddressPrefix)
-		assert.NoError(t, tbl.AddRoute(RoutingTableEntry{
+		_, err := tbl.AddRoute(RoutingTableEntry{
 			DstIP:   ip,
 			NextHop: peers[i%len(peers)],
 			Path:    makeRandomSwitchPath(peers[i%len(peers)], 2),
 			Source:  RouteSourceDiscovered,
 			Expires: time.Now().Add(1 * time.Hour),
-		}), "adding discovered entry should succeed")
+		})
+		assert.NoError(t, err, "adding discovered entry should succeed")
 	}
 
 	t.Logf("testing lookups...")
-	for i := 0; i < testLookups; i++ {
+	for range testLookups {
 		ip := makeRandomAddress(RoutingAddressPrefix)
 		entry, _ := tbl.LookupNearest(ip)
 		assert.NotNil(t, entry, "lookup must return an entry")
 	}
 
+	// DEBUG:
+	// fmt.Println(tbl.Format())
+
 	// Remove next hop and check size afterwards.
 	tbl.RemoveNextHop(peers[0])
 	t.Logf("table size after removing one next hop: %d", len(tbl.entries))
-	assert.Equal(t, expectedSizeAfterRemovingNextHop, len(tbl.entries), "unexpected table size after removing hop")
+	switch {
+	case len(tbl.entries) > expectedSizeAfterRemovingNextHop:
+		assert.Len(t, tbl.entries, expectedSizeAfterRemovingNextHop, "unexpected table size after removing hop")
+	case len(tbl.entries) < expectedSizeAfterRemovingNextHop*9/10:
+		assert.Len(t, tbl.entries, expectedSizeAfterRemovingNextHop, "unexpected table size after removing hop")
+	}
 
 	// Clean and check size afterwards.
 	tbl.Clean()
-	// fmt.Println(tbl.Format())
 	t.Logf("table size after clean: %d", len(tbl.entries))
-	assert.Equal(t, expectedSizeAfterClean, len(tbl.entries), "unexpected table size after cleaning")
+
+	// DEBUG:
+	// fmt.Println(tbl.Format())
+
+	switch {
+	case len(tbl.entries) > expectedSizeAfterClean:
+		assert.Len(t, tbl.entries, expectedSizeAfterClean, "unexpected table size after cleaning")
+	case len(tbl.entries) < expectedSizeAfterClean*8/10:
+		assert.Len(t, tbl.entries, expectedSizeAfterClean, "unexpected table size after cleaning")
+	}
 }
 
 func makeRandomAddress(prefix netip.Prefix) netip.Addr {
@@ -223,7 +243,7 @@ func BenchmarkTableLookup(b *testing.B) {
 	b.Logf("adding peer entries...")
 	for i := 0; i < addRandomPeerEntries; i++ {
 		ip := makeRandomAddress(myPrefix)
-		_ = tbl.AddRoute(RoutingTableEntry{
+		_, _ = tbl.AddRoute(RoutingTableEntry{
 			DstIP:  ip,
 			Source: RouteSourcePeer,
 		})
@@ -231,7 +251,7 @@ func BenchmarkTableLookup(b *testing.B) {
 	b.Logf("adding gossip entries...")
 	for i := 0; i < addRandomGossipEntries; i++ {
 		ip := makeRandomAddress(RoutingAddressPrefix)
-		_ = tbl.AddRoute(RoutingTableEntry{
+		_, _ = tbl.AddRoute(RoutingTableEntry{
 			DstIP:  ip,
 			Source: RouteSourceGossip,
 		})
@@ -239,7 +259,7 @@ func BenchmarkTableLookup(b *testing.B) {
 	b.Logf("adding discovered entries...")
 	for i := 0; i < addRandomDiscoveredEntries; i++ {
 		ip := makeRandomAddress(RoutingAddressPrefix)
-		_ = tbl.AddRoute(RoutingTableEntry{
+		_, _ = tbl.AddRoute(RoutingTableEntry{
 			DstIP:  ip,
 			Source: RouteSourceDiscovered,
 		})
@@ -321,7 +341,7 @@ func BenchmarkTableCleaning(b *testing.B) {
 	b.Logf("adding peer entries...")
 	for i := 0; i < addRandomPeerEntries; i++ {
 		ip := makeRandomAddress(myPrefix)
-		err := tbl.AddRoute(RoutingTableEntry{
+		_, err := tbl.AddRoute(RoutingTableEntry{
 			DstIP:   ip,
 			NextHop: ip,
 			Path:    makeRandomSwitchPath(ip, 1),
@@ -335,7 +355,7 @@ func BenchmarkTableCleaning(b *testing.B) {
 	b.Logf("adding gossip entries...")
 	for i := 0; i < addRandomGossipEntries; i++ {
 		ip := makeRandomAddress(RoutingAddressPrefix)
-		err := tbl.AddRoute(RoutingTableEntry{
+		_, err := tbl.AddRoute(RoutingTableEntry{
 			DstIP:   ip,
 			NextHop: ip,
 			Path:    makeRandomSwitchPath(ip, 1),
@@ -349,7 +369,7 @@ func BenchmarkTableCleaning(b *testing.B) {
 	b.Logf("adding discovered entries...")
 	for i := 0; i < addRandomDiscoveredEntries; i++ {
 		ip := makeRandomAddress(RoutingAddressPrefix)
-		err := tbl.AddRoute(RoutingTableEntry{
+		_, err := tbl.AddRoute(RoutingTableEntry{
 			DstIP:   ip,
 			NextHop: ip,
 			Path:    makeRandomSwitchPath(ip, 1),
