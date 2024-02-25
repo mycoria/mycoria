@@ -59,6 +59,10 @@ type Link interface {
 	// Latency returns the latency of the link in milliseconds.
 	Latency() uint16
 
+	// AddMeasuredLatency adds the given latency to the measured latencies and
+	// calculates and sets the new average.
+	AddMeasuredLatency(latency time.Duration)
+
 	// FlowControlIndicator returns a flow control flag that indicates the
 	// pressure on the sending queue of this link.
 	FlowControlIndicator() frame.FlowControlFlag
@@ -92,8 +96,6 @@ type LinkBase struct {
 	outgoing bool
 	// started holds the time when the link was created.
 	started time.Time
-	// latency is the latency of the link in ms (one direction).
-	latency uint16
 	// switchLabel is the switch ID for this link.
 	switchLabel m.SwitchLabel
 	// closing specifies if the link is being closed
@@ -101,6 +103,18 @@ type LinkBase struct {
 
 	// peering references back to the peering manager.
 	peering *Peering
+
+	// Locked fields
+
+	// lock locks the locked fields.
+	lock sync.RWMutex
+
+	// latency is the latency of the link in ms (one direction).
+	latency uint16
+	// measuredLatencies holds the measured latencies.
+	measuredLatencies [10]time.Duration
+	// measuredLatenciesNext holds the next index to use of measuredLatencies.
+	measuredLatenciesNext int
 }
 
 var _ Link = &LinkBase{}
@@ -202,7 +216,40 @@ func (link *LinkBase) RemoteAddr() net.Addr {
 
 // Latency returns the latency of the link in milliseconds.
 func (link *LinkBase) Latency() uint16 {
+	link.lock.RLock()
+	defer link.lock.RUnlock()
+
 	return link.latency
+}
+
+// AddMeasuredLatency adds the given latency to the measured latencies and
+// calculates and sets the new average.
+func (link *LinkBase) AddMeasuredLatency(latency time.Duration) {
+	link.lock.Lock()
+	defer link.lock.Unlock()
+
+	// Add latency to measured latencies.
+	link.measuredLatencies[link.measuredLatenciesNext] = latency
+	link.measuredLatenciesNext = (link.measuredLatenciesNext + 1) % 10
+
+	// Calculate new average.
+	var (
+		set   int64
+		total time.Duration
+	)
+	for _, ml := range link.measuredLatencies {
+		if ml > 0 {
+			set++
+			total += ml
+		}
+	}
+	avgLatency := (total / time.Duration(set)).Round(time.Millisecond)
+	link.latency = uint16(avgLatency / time.Millisecond)
+
+	// Force to at least 1ms.
+	if link.latency == 0 {
+		link.latency = 1
+	}
 }
 
 // FlowControlIndicator returns a flow control flag that indicates the
@@ -660,15 +707,15 @@ func (link *LinkBase) getFallbackLatency() uint16 {
 	case *net.IPAddr:
 		remoteIP = v.IP
 	default:
-		return 20
+		return 50
 	}
 
 	switch {
 	case remoteIP.IsGlobalUnicast():
-		return 20
+		return 100
 	case remoteIP.IsPrivate():
 		return 5
 	default:
-		return 10
+		return 50
 	}
 }

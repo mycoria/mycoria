@@ -57,6 +57,7 @@ func (r *Router) keepAlivePeer(w *mgr.WorkerCtx, link peering.Link) {
 		}
 
 		// Send keep-alive.
+		sentAt := time.Now()
 		notify, pingID, err = r.PingPong.Send(link.Peer(), pingID)
 		if err != nil {
 			w.Warn(
@@ -75,6 +76,9 @@ func (r *Router) keepAlivePeer(w *mgr.WorkerCtx, link peering.Link) {
 		case <-w.Done():
 			return
 		case <-notify:
+			// TODO: This might give wrong measurements sometimes, because we retry
+			// pings with the same ID. Impact is quite low though, as we use 10x avg.
+			link.AddMeasuredLatency(time.Since(sentAt) / 2)
 			return
 		case <-time.After(3 * time.Second):
 			fails++
