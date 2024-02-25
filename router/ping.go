@@ -176,7 +176,15 @@ func (r *Router) parsePingMsg(f frame.Frame) (hdr *PingHeader, body []byte, err 
 
 	// Unseal ping message.
 	if err := f.Unseal(session); err != nil {
-		return nil, nil, fmt.Errorf("unseal: %w", err)
+		switch {
+		case f.MessageType() == frame.RouterHopPing &&
+			errors.Is(err, state.ErrImmediateDuplicateFrame):
+			// Hop pings may have immediate duplicate frames, as the pings hop and
+			// spread and we might receive variants of the same message from different
+			// peers - eg. router announcements.
+		default:
+			return nil, nil, fmt.Errorf("unseal: %w", err)
+		}
 	}
 
 	// Get header.
