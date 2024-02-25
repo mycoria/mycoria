@@ -753,10 +753,10 @@ func formatPrefix(prefix netip.Prefix) string {
 				info = "geomarked world region " + cml.Continent
 			case prefix.Bits() == RegionPrefixBits:
 				info = "geomarked continental region " +
-					cml.Continent + "-" + cml.Region
+					cml.Continent + " " + regionCodeToDescription[cml.Region]
 			default:
 				info = "geomarked country " + cml.Country +
-					" (" + cml.Continent + "-" + cml.Region + ")"
+					" (" + cml.Continent + " " + regionCodeToDescription[cml.Region] + ")"
 			}
 		}
 	}
