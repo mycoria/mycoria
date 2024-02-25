@@ -118,13 +118,13 @@ func (s *MemStorage) Prune(keep int) {
 		return
 	}
 
-	// Remove old entries.
-	oneMonthAgo := time.Now().Add(-30 * 24 * time.Hour)
+	// Remove old entries after a week.
+	oneWeekAgo := time.Now().Add(-7 * 24 * time.Hour)
 	for ip, info := range s.routers {
 		switch {
-		case info.UpdatedAt.Before(oneMonthAgo):
+		case info.UpdatedAt.Before(oneWeekAgo):
 			delete(s.routers, ip)
-		case info.UsedAt.Before(oneMonthAgo):
+		case info.UsedAt.Before(oneWeekAgo):
 			delete(s.routers, ip)
 		}
 	}
