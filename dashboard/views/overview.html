@@ -41,19 +41,36 @@
   </div>
   <div class="card-body p-0">
 
-    <table class="table table-hover mb-0">
+    <table class="table table-hover mb-0 fw-light font-monospace">
       <tbody>
+        <tr>
+          <th scope="col" class="bg-body-tertiary">Router</th>
+          <th scope="col" class="bg-body-tertiary">GeoMarking</th>
+          <th scope="col" class="bg-body-tertiary">Peering</th>
+          <th scope="col" class="bg-body-tertiary">Latency</th>
+          <th scope="col" class="bg-body-tertiary">Uptime</th>
+          <th scope="col" class="bg-body-tertiary">Started</th>
+          <th scope="col" class="bg-body-tertiary"></th>
+        </tr>
+      </thead>
         {{ range .Page.Peerings }}
         <tr>
-          <td class="bg-body-tertiary fw-light font-monospace">
+          <td class="bg-body-tertiary">
             {{ .Peer.StringExpanded }}
           </td>
           <td class="bg-body-tertiary">
-            {{ .PeeringURL }}
+            {{ .GeoMark }}
           </td>
-          <!-- <td class="bg-body-tertiary">
+          <td class="bg-body-tertiary">
+            {{ if .Outgoing }}
+              to {{ .PeeringURL }}
+            {{ else }}
+              from {{ .RemoteAddr }} on {{ .PeeringURL }}
+            {{ end }}
+          </td>
+          <td class="bg-body-tertiary">
             {{ .Latency }}ms
-          </td> -->
+          </td>
           <td class="bg-body-tertiary">
             {{ .Uptime.Round 1000000000 }}
           </td>

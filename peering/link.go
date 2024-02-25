@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -31,6 +32,9 @@ type Link interface {
 
 	// SwitchLabel returns the switch label of the link.
 	SwitchLabel() m.SwitchLabel
+
+	// GeoMark returns geo location of the peer, based on the router address.
+	GeoMark() string
 
 	// PeeringURL returns the used peering URL.
 	PeeringURL() *m.PeeringURL
@@ -90,14 +94,18 @@ type LinkBase struct {
 
 	// peer is the mycoria identity IP of the peer.
 	peer netip.Addr
+	// switchLabel is the switch ID for this link.
+	switchLabel m.SwitchLabel
+	// geoMark holds geo location info based on the geo geomarked router address.
+	geoMark string
+
 	// peeringURL holds the used peering URL.
 	peeringURL *m.PeeringURL
 	// outgoing specifies whether the link was initiated by this router.
 	outgoing bool
 	// started holds the time when the link was created.
 	started time.Time
-	// switchLabel is the switch ID for this link.
-	switchLabel m.SwitchLabel
+
 	// closing specifies if the link is being closed
 	closing atomic.Bool
 
@@ -164,6 +172,11 @@ func (link *LinkBase) SwitchLabel() m.SwitchLabel {
 		return 0
 	}
 	return link.switchLabel
+}
+
+// GeoMark returns geo location of the peer, based on the router address.
+func (link *LinkBase) GeoMark() string {
+	return link.geoMark
 }
 
 // PeeringURL returns the used peering URL.
@@ -563,10 +576,17 @@ func (link *LinkBase) setupWorker(w *mgr.WorkerCtx) error {
 		link.encSession, err = peeringState.finalize()
 	}
 	if err == nil {
+		// Assign peer and geomarked country.
 		link.peer = peeringState.session.Address().IP
+		cml, cmlErr := m.LookupCountryMarker(link.peer)
+		if cmlErr == nil && cml != nil {
+			link.geoMark = fmt.Sprintf("%s (%s)", cml.Country, cml.Continent)
+		}
+		// Assign switch label.
 		err = link.assignSwitchLabel()
 	}
 	if err == nil {
+		// Add link to peerings.
 		err = link.peering.AddLink(link)
 	}
 	if err != nil {
@@ -599,10 +619,17 @@ func (link *LinkBase) handleSetup(mgr *mgr.Manager) (*LinkBase, error) {
 		link.encSession, err = peeringState.finalize()
 	}
 	if err == nil {
+		// Assign peer and geomarked country.
 		link.peer = peeringState.session.Address().IP
+		cml, cmlErr := m.LookupCountryMarker(link.peer)
+		if cmlErr == nil && cml != nil {
+			link.geoMark = fmt.Sprintf("%s (%s)", cml.Country, cml.Continent)
+		}
+		// Assign switch label.
 		err = link.assignSwitchLabel()
 	}
 	if err == nil {
+		// Add link to peerings.
 		err = link.peering.AddLink(link)
 	}
 	if err != nil {
