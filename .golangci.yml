@@ -33,6 +33,7 @@ linters:
     - nosnakecase
     - revive
     - tagliatelle
+    - testifylint
     - testpackage
     - varnamelen
     - whitespace
