@@ -1,0 +1,10 @@
+#!/bin/bash
+set -euo pipefail
+
+# Get version.
+VERSION="$(git tag --points-at)"
+test -z "$VERSION" && VERSION="$(git describe --tags --abbrev=0)§dev§build" || git diff --quiet || VERSION="${VERSION}§dev§build"
+LDFLAGS="-X main.Version=${VERSION}"
+
+# Build.
+go build -ldflags "$LDFLAGS"

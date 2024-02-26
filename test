@@ -6,7 +6,7 @@ echo "=> Building..."
 
 # Get version.
 VERSION="$(git tag --points-at)"
-test -z "$VERSION" && VERSION="$(git describe --tags --abbrev=0)§dev§build"
+test -z "$VERSION" && VERSION="$(git describe --tags --abbrev=0)§dev§build" || git diff --quiet || VERSION="${VERSION}§dev§build"
 LDFLAGS="-X main.Version=${VERSION}"
 
 GOOS=linux GOARCH=amd64 go build -C cmd/mycoria -ldflags "$LDFLAGS" -o dist/mycoria_linux_amd64
