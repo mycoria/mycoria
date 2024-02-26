@@ -156,6 +156,8 @@ func (r *Router) frameHandler(w *mgr.WorkerCtx) error {
 				w.Debug(
 					"failed to handle frame",
 					"router", f.SrcIP(),
+					"dst", f.DstIP(),
+					"msgtype", f.MessageType(),
 					"err", err,
 				)
 				f.ReturnToPool()

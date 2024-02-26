@@ -329,12 +329,12 @@ func (rt *RoutingTable) LookupNearest(dst netip.Addr) (rte *RoutingTableEntry, i
 	rt.lock.RLock()
 	defer rt.lock.RUnlock()
 
-	index, peer := rt.findIndex(dst)
+	index, dstMatched := rt.findIndex(dst)
 	if index < 0 {
 		return nil, false
 	}
 	rte = rt.entries[index]
-	return rte, peer || rte.DstIP == dst
+	return rte, dstMatched
 }
 
 // LookupPossiblePaths looks the best possible entires for the given destination.
@@ -460,14 +460,11 @@ func addToPossiblePaths(list []*RoutingTableEntry, add *RoutingTableEntry, maxMa
 	return list, len(list) >= maxMatches
 }
 
-// Lookup looks up the given dst address in the routing table.
+// findIndex looks up the given dst address in the routing table.
 // It always returns the address-nearest next hop, if the table is not empty.
-// It additionally returns the switch labels, if there is an exact match.
-// The returned routing table entry belongs to the routing table and must not be modified.
-
-func (rt *RoutingTable) findIndex(dst netip.Addr) (index int, peer bool) {
+func (rt *RoutingTable) findIndex(dst netip.Addr) (index int, dstMatched bool) {
 	// Search for entry, get index where it is or should be.
-	index, peer = slices.BinarySearchFunc[[]*RoutingTableEntry, *RoutingTableEntry, netip.Addr](
+	index, dstMatched = slices.BinarySearchFunc[[]*RoutingTableEntry, *RoutingTableEntry, netip.Addr](
 		rt.entries,
 		dst,
 		func(rte *RoutingTableEntry, a netip.Addr) int {
@@ -484,21 +481,25 @@ func (rt *RoutingTable) findIndex(dst netip.Addr) (index int, peer bool) {
 
 			// Otherwise, find the best route by moving to first entry.
 			// Routes to the same destination are ordered by best first.
-			return -1
+			return 1
 		},
 	)
 
 	// TODO: We might have multiple entries for the same dst ip but with different paths!
 
 	switch {
-	case peer:
-		// Destination is a peer, return direct hit.
+	case dstMatched:
+		// Destination is a peer, return index as match.
 		return index, true
 
 	case index >= len(rt.entries):
 		// Index is after last entry, return last possible index.
-		// If there are no entries, this will result in a return of -1
+		// If the table is empty, this will return an index of -1.
 		return len(rt.entries) - 1, false
+
+	case rt.entries[index].DstIP == dst:
+		// If entry dst matches, return index as match.
+		return index, true
 
 	case index <= 0:
 		// Index is before or at first entry, return first entry.
@@ -710,7 +711,7 @@ func (rt *RoutingTable) Format() string {
 			fmt.Fprintf(b,
 				"  %d: %s %s cc=%s hops=%d lat=%dms next=%x via=%s\n", i+1,
 				rte.Source,
-				rte.DstIP,
+				rte.DstIP.StringExpanded(),
 				cc,
 				rte.Path.TotalHops,
 				rte.Path.TotalDelay,
