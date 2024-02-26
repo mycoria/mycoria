@@ -704,7 +704,7 @@ func (rt *RoutingTable) Format() string {
 		switch {
 		case rte.Source == RouteSourcePeer:
 			fmt.Fprintf(b, "  %d: %s   %s cc=%s hops=%d\n", i+1,
-				rte.Source, rte.DstIP, cc, rte.Path.TotalHops,
+				rte.Source, rte.DstIP.StringExpanded(), cc, rte.Path.TotalHops,
 			)
 		default:
 			fmt.Fprintf(b,
