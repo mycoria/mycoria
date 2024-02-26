@@ -217,8 +217,10 @@ forwardToPeers:
 			// Check if link is valid.
 			continue forwardToPeers
 
-		case sendLink.Lite():
+		case sendLink.Lite() &&
+			!h.r.instance.Config().Router.Lite:
 			// Do not send announcement to lite mode routers.
+			// Except, when this router is in lite mode too.
 			continue forwardToPeers
 
 		case sendLink.Peer() == f.SrcIP():
