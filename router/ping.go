@@ -156,10 +156,23 @@ func (r *Router) sendPingMsg(dst netip.Addr, pingID uint64, pingType string, pin
 		f.SetTTL(32)
 	}
 
-	// Send frame.
-	if err := r.RouteFrame(f); err != nil {
-		return fmt.Errorf("send frame: %w", err)
+	// Send frame on all links.
+	if f.DstIP() == m.RouterAddress {
+		for _, link := range r.instance.Peering().GetLinks() {
+			err := r.instance.Switch().ForwardByPeer(f, link.Peer())
+			if err != nil {
+				// TODO: Continue sending if one fails.
+				return fmt.Errorf("send ping frame to %s: %w", link.Peer(), err)
+			}
+		}
+		return nil
 	}
+
+	// Send frame to destination.
+	if err := r.RouteFrame(f); err != nil {
+		return fmt.Errorf("send ping frame: %w", err)
+	}
+
 	return nil
 }
 
