@@ -48,10 +48,14 @@ jobs:
 
       - name: Build Releases
         run: |
-          GOOS=linux GOARCH=amd64 go build -C cmd/mycoria -o dist/mycoria_linux_amd64
-          GOOS=linux GOARCH=arm64 go build -C cmd/mycoria -o dist/mycoria_linux_arm64
-          GOOS=windows GOARCH=amd64 go build -C cmd/mycoria -o dist/mycoria_windows_amd64.exe
-          GOOS=windows GOARCH=arm64 go build -C cmd/mycoria -o dist/mycoria_windows_arm64.exe
+          VERSION="$(git tag --points-at)"
+          test -z "$VERSION" && VERSION="$(git describe --tags --abbrev=0)§dev§build"
+          LDFLAGS="-X main.Version=${VERSION}"
+          GOOS=linux GOARCH=amd64 go build -C cmd/mycoria -ldflags "$LDFLAGS" -o dist/mycoria_linux_amd64
+          GOOS=linux GOARCH=arm64 go build -C cmd/mycoria -ldflags "$LDFLAGS" -o dist/mycoria_linux_arm64
+          GOOS=windows GOARCH=amd64 go build -C cmd/mycoria -ldflags "$LDFLAGS" -o dist/mycoria_windows_amd64.exe
+          GOOS=windows GOARCH=arm64 go build -C cmd/mycoria -ldflags "$LDFLAGS" -o dist/mycoria_windows_arm64.exe
+          cmd/mycoria/dist/mycoria_linux_amd64 version
 
       - name: Publish Releases
         uses: softprops/action-gh-release@v1
