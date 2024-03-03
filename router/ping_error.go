@@ -9,6 +9,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/mycoria/mycoria/frame"
+	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/mgr"
 )
 
@@ -19,12 +20,6 @@ const (
 	errorCleanup      = 10 * time.Minute
 )
 
-// Error IDs.
-const (
-	PingErrorNoRoute          = "no route"
-	PingErrorNoEncryptionKeys = "no encryption keys"
-)
-
 // ErrorPingHandler handles announce pings.
 type ErrorPingHandler struct {
 	r *Router
@@ -33,12 +28,14 @@ type ErrorPingHandler struct {
 	routerStatesLock sync.Mutex
 }
 
+type errCode uint8
+
 // routerErrorState is router error state.
 type routerErrorState struct {
 	sync.Mutex
 
-	sent map[string]time.Time
-	rcvd map[string]time.Time
+	sent map[errCode]time.Time
+	rcvd map[errCode]time.Time
 
 	lastActivity time.Time
 }
@@ -72,45 +69,45 @@ func (h *ErrorPingHandler) getOrCreateState(remote netip.Addr) *routerErrorState
 
 	// Create new state, save and return.
 	state = &routerErrorState{
-		sent:         make(map[string]time.Time),
-		rcvd:         make(map[string]time.Time),
+		sent:         make(map[errCode]time.Time),
+		rcvd:         make(map[errCode]time.Time),
 		lastActivity: time.Now(),
 	}
 	h.routerStates[remote] = state
 	return state
 }
 
-func (h *ErrorPingHandler) maySend(errID string, remote netip.Addr) bool {
+func (h *ErrorPingHandler) maySend(errCode errCode, remote netip.Addr) bool {
 	state := h.getOrCreateState(remote)
 	state.Lock()
 	defer state.Unlock()
 
 	// Check if we have a record for this error.
-	lastSent, ok := state.sent[errID]
+	lastSent, ok := state.sent[errCode]
 	if ok && time.Since(lastSent) < errorSendCooldown {
 		// If within cooldown, don't send again.
 		return false
 	}
 
 	// If not sent or outside of cooldown, update timestamp and allow sending.
-	state.sent[errID] = time.Now()
+	state.sent[errCode] = time.Now()
 	return true
 }
 
-func (h *ErrorPingHandler) mayRecv(errID string, remote netip.Addr) bool {
+func (h *ErrorPingHandler) mayRecv(errCode errCode, remote netip.Addr) bool {
 	state := h.getOrCreateState(remote)
 	state.Lock()
 	defer state.Unlock()
 
 	// Check if we have a record for this error.
-	lastRcvd, ok := state.rcvd[errID]
+	lastRcvd, ok := state.rcvd[errCode]
 	if ok && time.Since(lastRcvd) < errorRecvCooldown {
 		// If within cooldown, don't receive again.
 		return false
 	}
 
 	// If not received or outside of cooldown, update timestamp and allow sending.
-	state.rcvd[errID] = time.Now()
+	state.rcvd[errCode] = time.Now()
 	return true
 }
 
@@ -129,31 +126,66 @@ func (h *ErrorPingHandler) Clean(w *mgr.WorkerCtx) error {
 	return nil
 }
 
-// ErrorPingMsg is an error ping message.
-type ErrorPingMsg struct {
-	ID  string `cbor:"e,omitempty" json:"e,omitempty"`
-	Msg string `cbor:"m,omitempty" json:"m,omitempty"`
+// Error Ping Codes.
+const (
+	pingCodeErrorGeneric          errCode = 0
+	pingCodeErrorUnreachable      errCode = 1
+	pingCodeErrorNoEncryptionKeys errCode = 2
+	pingCodeErrorAccessDenied     errCode = 3
+)
+
+type unreachableMsg struct {
+	Unreachable netip.Addr `cbor:"u,omitempty" json:"u,omitempty"`
+}
+
+type accessDeniedMsg struct {
+	DstIP    netip.Addr `cbor:"d,omitempty" json:"d,omitempty"`
+	Protocol uint8      `cbor:"t,omitempty" json:"t,omitempty"`
+	DstPort  uint16     `cbor:"p,omitempty" json:"p,omitempty"`
+}
+
+// SendGeneric sends a generic error.
+func (h *ErrorPingHandler) SendGeneric(to netip.Addr, text string) error {
+	return h.sendError(to, frame.RouterPing, pingCodeErrorGeneric, text)
+}
+
+// SendUnreachable sends an unreachable error.
+func (h *ErrorPingHandler) SendUnreachable(to, unreachable netip.Addr) error {
+	return h.sendError(to, frame.RouterPing, pingCodeErrorUnreachable, &unreachableMsg{
+		Unreachable: unreachable,
+	})
+}
+
+// SendNoEncryptionKeys sends a "no encryption keys" error.
+func (h *ErrorPingHandler) SendNoEncryptionKeys(to netip.Addr) error {
+	return h.sendError(to, frame.RouterPing, pingCodeErrorNoEncryptionKeys, nil)
+}
+
+// SendAccessDenied sends an access denied error.
+func (h *ErrorPingHandler) SendAccessDenied(to netip.Addr, dstIP netip.Addr, protocol uint8, dstPort uint16) error {
+	return h.sendError(to, frame.RouterCtrl, pingCodeErrorAccessDenied, &accessDeniedMsg{
+		DstIP:    dstIP,
+		Protocol: protocol,
+		DstPort:  dstPort,
+	})
 }
 
 // Send sends a hello message to the given destination.
-func (h *ErrorPingHandler) Send(errID, msg string, to netip.Addr) error {
+func (h *ErrorPingHandler) sendError(to netip.Addr, msgType frame.MessageType, errCode errCode, data any) error {
 	// Check if we may send.
-	if !h.maySend(errID, to) {
+	if !h.maySend(errCode, to) {
 		// Ignore.
 		return nil
 	}
 
 	// Marshal error message.
-	data, err := cbor.Marshal(&ErrorPingMsg{
-		ID:  errID,
-		Msg: msg,
-	})
+	pingData, err := cbor.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
 
 	// Send error.
-	err = h.r.sendPingMsg(to, 0, errorPingType, data, false, false)
+	err = h.r.sendPingMsg(to, msgType, 0, errorPingType, uint8(errCode), pingData, false)
 	if err != nil {
 		return fmt.Errorf("send ping: %w", err)
 	}
@@ -163,45 +195,53 @@ func (h *ErrorPingHandler) Send(errID, msg string, to netip.Addr) error {
 
 // Handle handles incoming ping frames.
 func (h *ErrorPingHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingHeader, data []byte) error {
-	// Parse error message.
-	msg := &ErrorPingMsg{}
-	err := cbor.Unmarshal(data, msg)
-	if err != nil {
-		return fmt.Errorf("unmarshal: %w", err)
-	}
-
 	// Check if we may receive.
-	if !h.mayRecv(msg.ID, f.SrcIP()) {
+	if !h.mayRecv(errCode(hdr.PingCode), f.SrcIP()) {
 		// Ignore.
 		return nil
 	}
 
-	switch msg.ID {
-	case PingErrorNoRoute:
-		// TODO: Mark in session as non-existent router?
+	// Handle depending on error code.
+	switch errCode(hdr.PingCode) {
+	case pingCodeErrorGeneric:
+		w.Warn(
+			"received generic error ping",
+			"router", f.SrcIP(),
+			"err", m.SafeString(string(data)),
+		)
 
-	case PingErrorNoEncryptionKeys:
+	case pingCodeErrorUnreachable:
+		// Parse error message.
+		msg := &unreachableMsg{}
+		err := cbor.Unmarshal(data, msg)
+		if err != nil {
+			return fmt.Errorf("unmarshal: %w", err)
+		}
+		h.r.markUnreachable(msg.Unreachable)
+
+	case pingCodeErrorNoEncryptionKeys:
 		// Removing the encryption setting will trigger the next packet to that
 		// router to setup up new encryption keys.
 		// Error is only returned when router has no session.
 		_ = h.r.instance.State().SetEncryptionSession(f.SrcIP(), nil)
 
+	case pingCodeErrorAccessDenied:
+		// Parse error message.
+		msg := &accessDeniedMsg{}
+		err := cbor.Unmarshal(data, msg)
+		if err != nil {
+			return fmt.Errorf("unmarshal: %w", err)
+		}
+		h.r.markAccessDenied(msg.DstIP, msg.Protocol, msg.DstPort)
+
 	default:
 		w.Debug(
 			"received unknown error ping",
-			"id", msg.ID,
-			"msg", msg.Msg,
 			"router", f.SrcIP(),
+			"code", hdr.PingCode,
+			"err", m.SafeString(string(data)),
 		)
-		return nil
 	}
-
-	w.Debug(
-		"received error ping",
-		"id", msg.ID,
-		"msg", msg.Msg,
-		"router", f.SrcIP(),
-	)
 
 	return nil
 }

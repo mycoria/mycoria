@@ -6,6 +6,8 @@ import (
 	"net/netip"
 	"runtime"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/mycoria/mycoria/api/httpapi"
 	"github.com/mycoria/mycoria/api/netstack"
@@ -23,8 +25,9 @@ import (
 type Router struct {
 	mgr *mgr.Manager
 
-	routerConfig Config
-	input        chan frame.Frame
+	routerConfig  Config
+	input         chan frame.Frame
+	handleTraffic atomic.Bool
 
 	table *m.RoutingTable
 
@@ -34,10 +37,11 @@ type Router struct {
 	connStates     map[connStateKey]*connStateEntry
 	connStatesLock sync.RWMutex
 
-	HelloPing    *HelloPingHandler
-	PingPong     *PingPongHandler
-	ErrorPing    *ErrorPingHandler
-	AnnouncePing *AnnouncePingHandler
+	HelloPing      *HelloPingHandler
+	PingPong       *PingPongHandler
+	ErrorPing      *ErrorPingHandler
+	AnnouncePing   *AnnouncePingHandler
+	DisconnectPing *DisconnectPingHandler
 
 	instance instance
 }
@@ -92,6 +96,7 @@ func New(instance instance, routerConfig Config) (*Router, error) {
 		connStates:   make(map[connStateKey]*connStateEntry),
 		instance:     instance,
 	}
+	r.handleTraffic.Store(true)
 
 	// Set and register ping handlers.
 	r.HelloPing = NewHelloPingHandler(r)
@@ -213,7 +218,7 @@ func (r *Router) handleIncomingFrame(w *mgr.WorkerCtx, f frame.Frame) error {
 		return errors.New("not yet supported")
 
 	case frame.NetworkTraffic:
-		return r.handleIncomingTraffic(f)
+		return r.handleIncomingTraffic(w, f)
 
 	case frame.SessionCtrl:
 		return errors.New("not yet supported")

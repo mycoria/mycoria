@@ -2,8 +2,12 @@ package router
 
 import (
 	"errors"
+	"fmt"
 	"net/netip"
 	"time"
+
+	"golang.org/x/net/icmp"
+	"golang.org/x/net/ipv6"
 
 	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/frame"
@@ -105,34 +109,21 @@ func (r *Router) handleTunPacket(w *mgr.WorkerCtx, packetData []byte) {
 		)
 		return
 	}
-
-	// Check if we have seen this connection before.
-	connKey := connStateKey{
+	// Check policy.
+	status, statusUpdate := r.checkPolicy(w, false, connStateKey{
 		localIP:    src,
 		remoteIP:   dst,
 		protocol:   protocol,
 		localPort:  srcPort,
 		remotePort: dstPort,
-	}
-	connState, ok := r.getConnState(connKey)
-	switch {
-	case ok:
-		// Connection was seen previously.
-		connState.lastSeen.Store(time.Now().Unix())
-
-	case r.outboundAllowedTo(dst):
-		// New outbound connection is allowed.
-		entry := &connStateEntry{
-			inbound: false,
+	})
+	if status != connStatusAllowed {
+		if err := r.respondWithError(src, packetData, status); err != nil {
+			w.Debug(
+				"failed to send icmp error",
+				"err", err,
+			)
 		}
-		entry.lastSeen.Store(time.Now().Unix())
-		r.setConnState(connKey, entry)
-
-	default:
-		w.Debug(
-			"dropping non-friend packet in isolation mode",
-			"router", dst,
-		)
 		return
 	}
 
@@ -162,9 +153,21 @@ func (r *Router) handleTunPacket(w *mgr.WorkerCtx, packetData []byte) {
 		select {
 		case <-notify:
 			// Continue
+
+		case status = <-statusUpdate:
+			// Connection status changed.
+			if err := r.respondWithError(src, packetData, status); err != nil {
+				w.Debug(
+					"failed to send icmp error",
+					"err", err,
+				)
+			}
+			return
+
 		case <-time.After(1 * time.Second):
 			// Wait for 1 second in hot path, blocking one worker.
 			// TODO: Is this a good idea?
+
 		case <-w.Done():
 			return
 		}
@@ -219,13 +222,69 @@ func (r *Router) handleTunPacket(w *mgr.WorkerCtx, packetData []byte) {
 	}
 }
 
-func (r *Router) outboundAllowedTo(dst netip.Addr) bool {
-	// Check if router is isolated.
-	if !r.instance.Config().Router.Isolate {
-		return true
+func (r *Router) respondWithError(to netip.Addr, packetData []byte, status connStatus) error {
+	// Note: packetData must be copied!
+
+	switch status {
+	case connStatusUnreachable:
+		// Reply with 1.3 "address unreachable".
+		return r.sendUnreachableError(to, 3, packetData)
+
+	case connStatusProhibited:
+		// Denied locally.
+		// TODO: Reply with 1.1 "communication with destination administratively prohibited".
+		return r.sendUnreachableError(to, 1, packetData)
+
+	case connStatusDenied:
+		// Denied by remote.
+		// TODO: Reply with 1.5 "source address failed ingress/egress policy".
+		return r.sendUnreachableError(to, 5, packetData)
+
+	case connStatusUnknown, connStatusAllowed:
+		fallthrough
+	default:
+		// Drop packet.
+		return nil
+	}
+}
+
+func (r *Router) sendUnreachableError(to netip.Addr, code int, inData []byte) error {
+	// Get response data.
+	unreachData := inData
+	if len(unreachData) > 48 {
+		unreachData = unreachData[:48]
 	}
 
-	// Check if dst is a friend.
-	_, ok := r.instance.Config().FriendsByIP[dst]
-	return ok
+	// Create ICMP message.
+	icmpMsg := icmp.Message{
+		Type: ipv6.ICMPTypeDestinationUnreachable,
+		Code: code,
+		Body: &icmp.DstUnreach{
+			Data: unreachData,
+		},
+	}
+	icmpData, err := icmpMsg.Marshal(nil)
+	if err != nil {
+		return fmt.Errorf("failed to build icmp error packet: %w", err)
+	}
+
+	// Create full packet and copy ICMP message.
+	offset := r.instance.TunDevice().SendRawOffset()
+	packetData := make([]byte, offset+ipv6.HeaderLen+len(icmpData))
+	copy(packetData[offset+ipv6.HeaderLen:], icmpData)
+
+	// Set IPv6 header.
+	header := packetData[offset : offset+ipv6.HeaderLen]
+	header[0] = 6 << 4 // IP Version
+	m.PutUint16(header[4:6], uint16(len(icmpData)))
+	header[6] = 58 // Next Header
+	header[7] = 64 // Hop Limit
+	srcData := config.DefaultAPIAddress.As16()
+	copy(header[8:24], srcData[:])
+	dstData := to.As16()
+	copy(header[24:40], dstData[:])
+
+	// Submit to writer.
+	r.instance.TunDevice().SendRaw <- packetData
+	return nil
 }

@@ -421,7 +421,7 @@ func (c *Config) GetRouterInfo() *m.RouterInfo {
 	// Collect public services.
 	srv := make([]m.RouterService, 0, len(c.Services))
 	for _, service := range c.Services {
-		if service.Advertise {
+		if service.Public && service.Advertise {
 			srv = append(srv, m.RouterService{
 				Name:        service.Name,
 				Description: service.Description,

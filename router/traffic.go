@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"sync/atomic"
 	"time"
 
 	"github.com/mycoria/mycoria/frame"
@@ -13,33 +12,6 @@ import (
 	"github.com/mycoria/mycoria/state"
 )
 
-type connStateKey struct {
-	localIP    netip.Addr
-	remoteIP   netip.Addr
-	protocol   uint8
-	localPort  uint16
-	remotePort uint16
-}
-
-type connStateEntry struct {
-	lastSeen atomic.Int64
-	inbound  bool
-}
-
-func (r *Router) getConnState(key connStateKey) (*connStateEntry, bool) {
-	r.connStatesLock.RLock()
-	defer r.connStatesLock.RUnlock()
-
-	state, ok := r.connStates[key]
-	return state, ok
-}
-
-func (r *Router) setConnState(key connStateKey, entry *connStateEntry) {
-	r.connStatesLock.Lock()
-	defer r.connStatesLock.Unlock()
-
-	r.connStates[key] = entry
-}
 func (r *Router) handleIncomingTraffic(w *mgr.WorkerCtx, f frame.Frame) error {
 	// Check if handling is enabled.
 	if !r.handleTraffic.Load() {
@@ -59,7 +31,7 @@ func (r *Router) handleIncomingTraffic(w *mgr.WorkerCtx, f frame.Frame) error {
 	if err := f.Unseal(session); err != nil {
 		// Send error ping if encryption is not set up.
 		if errors.Is(err, state.ErrEncryptionNotSetUp) {
-			if err := r.ErrorPing.Send(PingErrorNoEncryptionKeys, "", f.SrcIP()); err != nil {
+			if err := r.ErrorPing.SendNoEncryptionKeys(f.SrcIP()); err != nil {
 				return fmt.Errorf("send error ping no encryption keys: %w", err)
 			}
 			return nil // TODO: Do we need to return the frame to pool here?
@@ -85,40 +57,36 @@ func (r *Router) handleIncomingTraffic(w *mgr.WorkerCtx, f frame.Frame) error {
 		dstPort = m.GetUint16(packetData[42:44])
 	}
 
-	// Check integrity and policy
+	// Check integrity.
 	switch {
 	case src != f.SrcIP():
+		f.ReturnToPool()
 		return errors.New("invalid packet: src IPs do not match")
+
 	case dst != f.DstIP():
+		f.ReturnToPool()
 		return errors.New("invalid packet: dst IPs do not match")
+
 	case m.InternalPrefix.Contains(f.DstIP()):
+		f.ReturnToPool()
 		return errors.New("invalid packet: dst IP is internal range")
 	}
-
-	// Check if we have seen this connection before.
-	connKey := connStateKey{
+	// Check policy.
+	status, _ := r.checkPolicy(w, true, connStateKey{
 		localIP:    dst,
 		remoteIP:   src,
 		protocol:   protocol,
 		localPort:  dstPort,
 		remotePort: srcPort,
-	}
-	connState, ok := r.getConnState(connKey)
-	switch {
-	case ok:
-		// Connection was seen and allowed previously.
-		connState.lastSeen.Store(time.Now().Unix())
-
-	case r.instance.Config().CheckInboundTrafficPolicy(protocol, dstPort, f.SrcIP()):
-		// New inbound connection is allowed by policy.
-		entry := &connStateEntry{
-			inbound: true,
+	})
+	if status != connStatusAllowed {
+		// Packet may not be received.
+		f.ReturnToPool()
+		if err := r.ErrorPing.SendAccessDenied(src, dst, protocol, dstPort); err != nil {
+			return fmt.Errorf("send access denied ping: %w", err)
 		}
-		entry.lastSeen.Store(time.Now().Unix())
-		r.setConnState(connKey, entry)
 
-	default:
-		return fmt.Errorf("packet from %s to %d-%d not allowed", f.SrcIP(), protocol, dstPort)
+		return nil
 	}
 
 	// Hand frame to tun device.

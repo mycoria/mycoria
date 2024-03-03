@@ -122,7 +122,7 @@ func (h *PingPongHandler) Send(dstIP netip.Addr, retryPingID uint64) (notify <-c
 	if pingID == 0 {
 		pingID = newPingID()
 	}
-	err = h.r.sendPingMsg(dstIP, pingID, pingPongPingType, data, false, false)
+	err = h.r.sendPingMsg(dstIP, frame.RouterPing, pingID, pingPongPingType, 0, data, false)
 	if err != nil {
 		return nil, 0, fmt.Errorf("send ping: %w", err)
 	}
@@ -140,7 +140,7 @@ func (h *PingPongHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingHeade
 	return h.handleRequest(w, f, hdr, data)
 }
 
-func (h *PingPongHandler) handleRequest(w *mgr.WorkerCtx, f frame.Frame, hdr *PingHeader, data []byte) error { //nolint:unparam
+func (h *PingPongHandler) handleRequest(_ *mgr.WorkerCtx, f frame.Frame, hdr *PingHeader, data []byte) error { //nolint:unparam
 	// Parse request.
 	msg := pingPongMsg{}
 	if err := cbor.Unmarshal(data, &msg); err != nil {
@@ -158,7 +158,7 @@ func (h *PingPongHandler) handleRequest(w *mgr.WorkerCtx, f frame.Frame, hdr *Pi
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-	err = h.r.sendPingMsg(f.SrcIP(), hdr.PingID, pingPongPingType, data, true, false)
+	err = h.r.sendPingMsg(f.SrcIP(), frame.RouterPing, hdr.PingID, pingPongPingType, 0, data, true)
 	if err != nil {
 		return fmt.Errorf("send ping pong response: %w", err)
 	}
@@ -171,7 +171,7 @@ func (h *PingPongHandler) handleRequest(w *mgr.WorkerCtx, f frame.Frame, hdr *Pi
 	return nil
 }
 
-func (h *PingPongHandler) handleResponse(w *mgr.WorkerCtx, f frame.Frame, hdr *PingHeader, data []byte) error { //nolint:unparam
+func (h *PingPongHandler) handleResponse(_ *mgr.WorkerCtx, _ frame.Frame, hdr *PingHeader, data []byte) error { //nolint:unparam
 	// Get ping state.
 	pingState := h.pluckActive(hdr.PingID)
 	if pingState == nil {

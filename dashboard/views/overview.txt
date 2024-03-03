@@ -12,5 +12,5 @@ Memory Usage: {{ .Page.MemStats.HeapAlloc | filesizeformat }}
 Peerings
 
 {{ range .Page.Peerings -}}
-{{ .Peer.StringExpanded }}{{ if .Lite }} [Lite]{{ end }} {{ .PeeringURL }} {{ .Latency }}ms {{ .Uptime.Round 1000000000 }}
+{{ .Peer.StringExpanded }}{{ if .Lite }} [Lite]{{ end }} {{ if .Outgoing }}to {{ .PeeringURL }}{{ else }}from {{ .RemoteAddr }} on {{ .PeeringURL }}{{ end }} {{ .Latency }}ms {{ .Uptime.Round 1000000000 }}
 {{ end }}

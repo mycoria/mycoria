@@ -36,6 +36,7 @@ var pingTypeRegex = regexp.MustCompile(`^[a-z0-9\.]+$`)
 type PingHeader struct {
 	PingID    uint64            `cbor:"i,omitempty" json:"i,omitempty"`
 	PingType  string            `cbor:"t,omitempty" json:"t,omitempty"`
+	PingCode  uint8             `cbor:"c,omitempty" json:"c,omitempty"`
 	FollowUp  bool              `cbor:"f,omitempty" json:"f,omitempty"`
 	AddrHash  m.Hash            `cbor:"h,omitempty" json:"h,omitempty"`
 	KeyType   string            `cbor:"a,omitempty" json:"a,omitempty"`
@@ -96,7 +97,11 @@ func (r *Router) handlePing(w *mgr.WorkerCtx, f frame.Frame) error {
 	return handler.Handle(w, f, hdr, data)
 }
 
-func (r *Router) sendPingMsg(dst netip.Addr, pingID uint64, pingType string, pingData []byte, followUp bool, hopping bool) error {
+func (r *Router) sendPingMsg(
+	dst netip.Addr, msgType frame.MessageType,
+	pingID uint64, pingType string, pingCode uint8,
+	pingData []byte, followUp bool,
+) error {
 	// Get ping ID, if not set.
 	if pingID == 0 {
 		pingID = newPingID()
@@ -106,6 +111,7 @@ func (r *Router) sendPingMsg(dst netip.Addr, pingID uint64, pingType string, pin
 	hdr := PingHeader{
 		PingID:    pingID,
 		PingType:  pingType,
+		PingCode:  pingCode,
 		FollowUp:  followUp,
 		AddrHash:  r.instance.Identity().Hash,
 		KeyType:   r.instance.Identity().Type,
@@ -129,24 +135,28 @@ func (r *Router) sendPingMsg(dst netip.Addr, pingID uint64, pingType string, pin
 
 	// Make frame.
 	f, err := r.instance.FrameBuilder().NewFrameV1(
-		r.instance.Identity().IP, dst,
-		frame.RouterPing,
+		r.instance.Identity().IP, dst, msgType,
 		nil, frameData, nil,
 	)
 	if err != nil {
 		return fmt.Errorf("build frame: %w", err)
 	}
-	if hopping {
-		f.SetMessageType(frame.RouterHopPing)
-	}
 
 	// Sign frame.
 	session := r.instance.State().GetSession(dst)
-	if session != nil {
+	switch {
+	case session != nil:
+		// Sign or encrypt with the existing session.
 		if err := f.Seal(session); err != nil {
 			return fmt.Errorf("sign frame: %w", err)
 		}
-	} else {
+
+	case msgType.IsEncrypted():
+		// If there is no session and the message type is encrypted,
+		// abort with error.
+		return errors.New("encryption is not set up")
+
+	default:
 		// Destination router is not known, sign raw.
 		f.SetTTL(0)
 		f.SetSequenceTime(time.Now().Round(state.DefaultPrecision).Add(-state.DefaultPrecision))

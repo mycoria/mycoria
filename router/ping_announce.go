@@ -83,7 +83,7 @@ func (h *AnnouncePingHandler) Send(peer netip.Addr) error {
 	}
 
 	// Send announcement.
-	err = h.r.sendPingMsg(m.RouterAddress, 0, announcePingType, data, false, true)
+	err = h.r.sendPingMsg(m.RouterAddress, frame.RouterHopPing, 0, announcePingType, 0, data, false)
 	if err != nil {
 		return fmt.Errorf("send ping: %w", err)
 	}
@@ -158,6 +158,7 @@ func (h *AnnouncePingHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingH
 			ForwardLabel: 0,
 			ReturnLabel:  msg.ReturnLabel,
 		})
+		switchPath.CalculateTotals()
 
 		added, err := h.r.table.AddRoute(m.RoutingTableEntry{
 			DstIP:   f.SrcIP(),
