@@ -12,6 +12,9 @@ type StoredRouter struct {
 	Address    *m.PublicAddress `json:"address,omitempty"    yaml:"address,omitempty"`
 	PublicInfo *m.RouterInfo    `json:"publicInfo,omitempty" yaml:"publicInfo,omitempty"`
 
+	// Offline signifies that the router has announced it is going offline.
+	Offline bool `json:"offline,omitempty" yaml:"offline,omitempty"`
+
 	CreatedAt time.Time  `json:"createdAt,omitempty" yaml:"createdAt,omitempty"`
 	UpdatedAt time.Time  `json:"updatedAt,omitempty" yaml:"updatedAt,omitempty"`
 	UsedAt    *time.Time `json:"usedAt,omitempty"    yaml:"usedAt,omitempty"`

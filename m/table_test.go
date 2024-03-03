@@ -50,6 +50,8 @@ func TestTable(t *testing.T) {
 
 		peers    = make([]netip.Addr, 0, addRandomPeerEntries)
 		prefixes = make(map[string]struct{})
+
+		disconnectRouters = make([]netip.Addr, 0, 100)
 	)
 
 	t.Logf("testing empty lookup...")
@@ -68,6 +70,11 @@ func TestTable(t *testing.T) {
 			Source:  RouteSourcePeer,
 		})
 		assert.NoError(t, err, "adding peer entry should succeed")
+
+		// Add some entry for disconnecting later.
+		if i%2 == 0 {
+			disconnectRouters = append(disconnectRouters, ip)
+		}
 
 		// Check if tables is sorted.
 		if !slices.IsSortedFunc[[]*RoutingTableEntry, *RoutingTableEntry](tbl.entries, tbl.stdSort) {
@@ -140,6 +147,11 @@ func TestTable(t *testing.T) {
 				}
 			}
 
+			// Add some entry for disconnecting later.
+			if i%2 == 0 {
+				disconnectRouters = append(disconnectRouters, ip)
+			}
+
 			// Check if tables is sorted.
 			if !slices.IsSortedFunc[[]*RoutingTableEntry, *RoutingTableEntry](tbl.entries, tbl.stdSort) {
 				t.Fatal("table is not sorted after adding gossip entry")
@@ -166,6 +178,11 @@ func TestTable(t *testing.T) {
 			Expires: time.Now().Add(1 * time.Hour),
 		})
 		assert.NoError(t, err, "adding discovered entry should succeed")
+
+		// Add some entry for disconnecting later.
+		if i%2 == 0 {
+			disconnectRouters = append(disconnectRouters, ip)
+		}
 	}
 
 	t.Logf("testing lookups...")
@@ -200,6 +217,18 @@ func TestTable(t *testing.T) {
 		assert.Equal(t, expectedSizeAfterClean, len(tbl.entries), "unexpected table size after cleaning")
 	case len(tbl.entries) < expectedSizeAfterClean*8/10:
 		assert.Equal(t, expectedSizeAfterClean, len(tbl.entries), "unexpected table size after cleaning")
+	}
+
+	// Randomly remove routes.
+	for i, disconnect := range disconnectRouters {
+		var removed int
+		if i%2 == 0 {
+			removed = tbl.RemoveDisconnected(disconnect, nil)
+		} else {
+			removed = tbl.RemoveDisconnected(disconnect, []netip.Addr{makeRandomAddress(RoutingAddressPrefix)})
+		}
+		// t.Logf("removed %d with %s", removed, disconnect)
+		_ = removed
 	}
 }
 

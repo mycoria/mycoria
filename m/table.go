@@ -523,16 +523,89 @@ func (rt *RoutingTable) findIndex(dst netip.Addr) (index int, dstMatched bool) {
 }
 
 // RemoveNextHop removes all routes with the given next hop IP from the routing table.
-func (rt *RoutingTable) RemoveNextHop(ip netip.Addr) {
+func (rt *RoutingTable) RemoveNextHop(ip netip.Addr) (removed int) {
 	rt.lock.Lock()
 	defer rt.lock.Unlock()
 
 	rt.entries = slices.DeleteFunc[[]*RoutingTableEntry, *RoutingTableEntry](
 		rt.entries,
 		func(rte *RoutingTableEntry) bool {
-			return rte.NextHop == ip
+			if rte.NextHop == ip {
+				removed++
+				return true
+			}
+			return false
 		},
 	)
+
+	return
+}
+
+// RemoveDisconnected removes all routes with the given disconnected peerings.
+// If disconnected is empty, all routes including the router are removed.
+func (rt *RoutingTable) RemoveDisconnected(router netip.Addr, disconnected []netip.Addr) (removed int) {
+	rt.lock.Lock()
+	defer rt.lock.Unlock()
+
+	rt.entries = slices.DeleteFunc[[]*RoutingTableEntry, *RoutingTableEntry](
+		rt.entries,
+		func(rte *RoutingTableEntry) bool {
+			// Remove any route with the router in it.
+			if len(disconnected) == 0 {
+				switch {
+				case rte.DstIP == router:
+					removed++
+					return true
+				case rte.NextHop == router:
+					removed++
+					return true
+				default:
+					for _, hop := range rte.Path.Hops {
+						if hop.Router == router {
+							removed++
+							return true
+						}
+					}
+					return false
+				}
+			}
+
+			// Remove specific links only.
+			for i, hop := range rte.Path.Hops {
+				if hop.Router == router {
+					// Found route that includes the router.
+
+					// Check if the previous hop in the path is one of the peerings.
+					if i > 0 {
+						for _, peer := range disconnected {
+							if rte.Path.Hops[i-1].Router == peer {
+								removed++
+								return true
+							}
+						}
+					}
+
+					// Check if the next hop in the path is one of the peerings.
+					if i < len(rte.Path.Hops)-1 {
+						for _, peer := range disconnected {
+							if rte.Path.Hops[i+1].Router == peer {
+								removed++
+								return true
+							}
+						}
+					}
+
+					// Router was in route, but not the disconnected peer.
+					// Router cannot be in route twice, stop here.
+					return false
+				}
+			}
+
+			return false
+		},
+	)
+
+	return removed
 }
 
 // Clean cleans the routing table from unneeded entries:

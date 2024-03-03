@@ -79,8 +79,12 @@ func (r *Router) handleTunPacket(w *mgr.WorkerCtx, packetData []byte) {
 	// Note: The data is currently copied for the frame.
 	defer r.instance.FrameBuilder().ReturnPooledSlice(packetData)
 
-	// Check addresses.
+	// Check integrity and addresses.
 	switch {
+	case !r.handleTraffic.Load():
+		// Traffic handling is disabled.
+		return
+
 	case multicastPrefix.Contains(dst):
 		// Ignore multicast packets.
 		return

@@ -40,8 +40,15 @@ func (r *Router) setConnState(key connStateKey, entry *connStateEntry) {
 
 	r.connStates[key] = entry
 }
+func (r *Router) handleIncomingTraffic(w *mgr.WorkerCtx, f frame.Frame) error {
+	// Check if handling is enabled.
+	if !r.handleTraffic.Load() {
+		// Traffic handling is disabled.
+		// TODO: Send back explicit discconect ping?
+		// The generic one might not reach a far away router.
+		return nil
+	}
 
-func (r *Router) handleIncomingTraffic(f frame.Frame) error {
 	// Get session.
 	session := r.instance.State().GetSession(f.SrcIP())
 	if session == nil {

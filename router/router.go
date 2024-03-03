@@ -110,6 +110,10 @@ func New(instance instance, routerConfig Config) (*Router, error) {
 	if err := r.RegisterPingHandler(r.AnnouncePing); err != nil {
 		return nil, err
 	}
+	r.DisconnectPing = NewDisconnectPingHandler(r)
+	if err := r.RegisterPingHandler(r.DisconnectPing); err != nil {
+		return nil, err
+	}
 
 	return r, nil
 }
@@ -119,6 +123,7 @@ func (r *Router) Start(mgr *mgr.Manager) error {
 	r.mgr = mgr
 
 	mgr.Go("announce router", r.announceWorker)
+	mgr.Go("accounce disconnects", r.disconnectWorker)
 	mgr.Go("keep-alive peers", r.keepAliveWorker)
 
 	mgr.Go("clean conn states", r.cleanConnStatesWorker)
@@ -135,6 +140,21 @@ func (r *Router) Start(mgr *mgr.Manager) error {
 
 // Stop stops the router.
 func (r *Router) Stop(mgr *mgr.Manager) error {
+	// Disable traffic handling.
+	r.handleTraffic.Store(false)
+
+	// Send disconnect message to tell others we are going offline.
+	if err := r.DisconnectPing.Send(true, nil); err != nil {
+		r.mgr.Warn(
+			"failed to send disconnect ping",
+			"err", err,
+		)
+	}
+
+	// Wait for 100ms for disconnect ping to be sent.
+	// TODO: Can we improve this?
+	time.Sleep(100 * time.Millisecond)
+
 	return nil
 }
 

@@ -29,6 +29,8 @@ type Peering struct {
 
 	protocols     map[string]Protocol
 	protocolsLock sync.RWMutex
+
+	PeeringEvents *mgr.EventMgr[*EventPeering]
 }
 
 // instance is an interface subset of inst.Ance.
@@ -58,11 +60,12 @@ func New(instance instance, frameHandler chan frame.Frame) *Peering {
 // Start starts the peering manager. It:
 // - Starts configured listeners.
 // - Connects to configured peers.
-func (p *Peering) Start(mgr *mgr.Manager) error {
-	p.mgr = mgr
+func (p *Peering) Start(m *mgr.Manager) error {
+	p.mgr = m
+	p.PeeringEvents = mgr.NewEventMgr[*EventPeering]("peering", p.mgr)
 
-	mgr.Go("listen manager", p.listenMgr)
-	mgr.Go("connect manager", p.connectMgr)
+	p.mgr.Go("listen manager", p.listenMgr)
+	p.mgr.Go("connect manager", p.connectMgr)
 
 	return nil
 }

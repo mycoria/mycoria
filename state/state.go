@@ -111,7 +111,8 @@ func (state *State) QueryRouters(q *storage.RouterQuery) error {
 func (state *State) QueryNearestRouters(ip netip.Addr, max int) ([]*storage.StoredRouter, error) {
 	q := storage.NewRouterQuery(
 		func(a *storage.StoredRouter) bool {
-			return a.PublicInfo != nil &&
+			return !a.Offline &&
+				a.PublicInfo != nil &&
 				len(a.PublicInfo.IANA) > 0 &&
 				len(a.PublicInfo.Listeners) > 0
 		},
@@ -144,6 +145,7 @@ func (state *State) AddPublicRouterInfo(id netip.Addr, info *m.RouterInfo) error
 	// Add to storage and save.
 	stored.PublicInfo = info
 	stored.UpdatedAt = time.Now()
+	stored.Offline = false
 	err = state.storage.SaveRouter(stored)
 	if err != nil {
 		return fmt.Errorf("save to storage: %w", err)
@@ -162,6 +164,31 @@ func (state *State) AddPublicRouterInfo(id netip.Addr, info *m.RouterInfo) error
 			)
 		}
 	}
+	return nil
+}
+
+// MarkRouterOffline marks that the router has announced it is going offline.
+func (state *State) MarkRouterOffline(id netip.Addr) error {
+	// Check if we already have that router.
+	stored, err := state.storage.GetRouter(id)
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
+		return fmt.Errorf("get stored router: %w", err)
+	}
+	if stored == nil {
+		return errors.New("router unknown")
+	}
+
+	// Add to storage and save.
+	stored.Offline = true
+	err = state.storage.SaveRouter(stored)
+	if err != nil {
+		return fmt.Errorf("save to storage: %w", err)
+	}
+
+	state.mgr.Debug(
+		"router going offline",
+		"router", id,
+	)
 	return nil
 }
 
