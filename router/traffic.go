@@ -78,7 +78,7 @@ func (r *Router) handleIncomingTraffic(w *mgr.WorkerCtx, f frame.Frame) error {
 		protocol:   protocol,
 		localPort:  dstPort,
 		remotePort: srcPort,
-	})
+	}, len(packetData))
 	if status != connStatusAllowed {
 		// Packet may not be received.
 		f.ReturnToPool()

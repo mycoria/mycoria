@@ -173,7 +173,7 @@ func (state *peeringRequestState) handlePeeringRequest(in frame.Frame) (frame.Fr
 		return nil, fmt.Errorf("unmarshal peering request: %w", err)
 	}
 	if in.MessageType() != frame.RouterPing {
-		return nil, fmt.Errorf("unexpected frame type: %s", in.MessageType())
+		return nil, fmt.Errorf("unexpected frame message type: %s", in.MessageType())
 	}
 	if in.SrcIP() != r.Address.IP {
 		return nil, fmt.Errorf("peering request IP (%s) does not match frame source (%s)", r.Address.IP, in.SrcIP())

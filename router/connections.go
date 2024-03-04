@@ -2,6 +2,8 @@ package router
 
 import (
 	"net/netip"
+	"slices"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -23,6 +25,9 @@ type connStateEntry struct {
 	inbound bool
 	status  atomic.Uint32
 	notify  chan connStatus
+
+	dataIn  atomic.Uint64
+	dataOut atomic.Uint64
 }
 
 type connStatus uint32
@@ -50,24 +55,36 @@ func (r *Router) setConnState(key connStateKey, entry *connStateEntry) {
 	r.connStates[key] = entry
 }
 
-func (r *Router) checkPolicy(w *mgr.WorkerCtx, inbound bool, connKey connStateKey) (status connStatus, statusUpdate chan connStatus) {
+func (r *Router) checkPolicy(w *mgr.WorkerCtx, inbound bool, connKey connStateKey, dataLength int) (status connStatus, statusUpdate chan connStatus) {
 	// Check if we have seen this connection before.
 	connState, ok := r.getConnState(connKey)
 	if ok {
 		// Update last seen.
 		connState.lastSeen.Store(time.Now().Unix())
+		// Update traffic stats.
+		if inbound {
+			connState.dataIn.Add(uint64(dataLength))
+		} else {
+			connState.dataOut.Add(uint64(dataLength))
+		}
 		// Return status and status update channel.
 		return connStatus(connState.status.Load()), connState.notify
 	}
 
 	// If not, set up state record.
 	connState = &connStateEntry{
-		inbound:   true,
+		inbound:   inbound,
 		firstSeen: time.Now().Unix(),
 		notify:    make(chan connStatus),
 	}
 	// Update last seen.
 	connState.lastSeen.Store(time.Now().Unix())
+	// Update traffic stats.
+	if inbound {
+		connState.dataIn.Add(uint64(dataLength))
+	} else {
+		connState.dataOut.Add(uint64(dataLength))
+	}
 
 	// Only save after decided on connection.
 	defer r.setConnState(connKey, connState)
@@ -167,5 +184,178 @@ states:
 				}
 			}
 		}
+	}
+}
+
+// ExportedConnection is an exported version of a connection.
+type ExportedConnection struct {
+	LocalIP    netip.Addr
+	RemoteIP   netip.Addr
+	Protocol   uint8
+	LocalPort  uint16
+	RemotePort uint16
+
+	Inbound     bool
+	StatusName  string
+	StatusColor string
+	FirstSeen   time.Time
+	LastSeen    time.Time
+
+	DataIn  uint64
+	DataOut uint64
+}
+
+// ExportConnections returns an exported version of the connections.
+func (r *Router) ExportConnections(maxAge time.Duration) []ExportedConnection {
+	// Export connections.
+	export := r.exportConnsRaw(maxAge)
+
+	// Sort.
+	slices.SortFunc[[]ExportedConnection, ExportedConnection](export, func(a, b ExportedConnection) int {
+		if diff := a.LastSeen.Compare(b.LastSeen); diff != 0 {
+			return -diff // Newer first.
+		}
+		if diff := a.FirstSeen.Compare(b.FirstSeen); diff != 0 {
+			return -diff // Newer first.
+		}
+		return 0
+	})
+
+	return export
+}
+
+func (r *Router) exportConnsRaw(maxAge time.Duration) []ExportedConnection {
+	r.connStatesLock.RLock()
+	defer r.connStatesLock.RUnlock()
+
+	export := make([]ExportedConnection, 0, len(r.connStates))
+	ignoreOlderThan := time.Now().Add(-maxAge).Unix()
+
+	for key, entry := range r.connStates {
+		if entry.lastSeen.Load() < ignoreOlderThan {
+			continue
+		}
+
+		status := connStatus(entry.status.Load())
+		export = append(export, ExportedConnection{
+			LocalIP:    key.localIP,
+			RemoteIP:   key.remoteIP,
+			Protocol:   key.protocol,
+			LocalPort:  key.localPort,
+			RemotePort: key.remotePort,
+
+			Inbound:     entry.inbound,
+			StatusName:  status.Name(),
+			StatusColor: status.ColorName(),
+			FirstSeen:   time.Unix(entry.firstSeen, 0),
+			LastSeen:    time.Unix(entry.lastSeen.Load(), 0),
+
+			DataIn:  entry.dataIn.Load(),
+			DataOut: entry.dataOut.Load(),
+		})
+	}
+
+	return export
+}
+
+// HasPorts returns whether the connection has ports.
+func (e *ExportedConnection) HasPorts() bool {
+	switch e.Protocol {
+	case 6: // TCP
+		return true
+	case 17: // UDP
+		return true
+	case 27: // RDP
+		return true
+	case 33: // DCCP
+		return true
+	case 136: // UDP-LITE
+		return true
+	default:
+		return false
+	}
+}
+
+// ProtocolName returns the protocol name, if available.
+// Otherwise a string representation of the protocol number is returned.
+func (e *ExportedConnection) ProtocolName() string {
+	switch e.Protocol {
+	case 1:
+		return "ICMP"
+	case 2:
+		return "IGMP"
+	case 6:
+		return "TCP"
+	case 17:
+		return "UDP"
+	case 27:
+		return "RDP"
+	case 58:
+		return "ICMP6"
+	case 33:
+		return "DCCP"
+	case 136:
+		return "UDP-LITE"
+	default:
+		return strconv.FormatUint(uint64(e.Protocol), 10)
+	}
+}
+
+// TimeDescription returns a simplified and readable description of the first
+// and last seen timestamps.
+func (e *ExportedConnection) TimeDescription() string {
+	switch {
+	case time.Since(e.FirstSeen) < 4500*time.Millisecond:
+		return "now"
+
+	case time.Since(e.LastSeen) < 4500*time.Millisecond:
+		// 1m23s ago - now
+		return time.Since(e.FirstSeen).Round(time.Second).String() + " ago - now"
+
+	case e.LastSeen.Sub(e.FirstSeen) < 4500*time.Millisecond:
+		// 1m23s ago
+		return time.Since(e.LastSeen).Round(time.Second).String() + " ago"
+
+	default:
+		// 1m23s - 5s ago
+		return time.Since(e.FirstSeen).Round(time.Second).String() + " - " +
+			time.Since(e.LastSeen).Round(time.Second).String() + " ago"
+	}
+}
+
+// Name returns the status name/description.
+func (status connStatus) Name() string {
+	switch status {
+	case connStatusAllowed:
+		return "allowed"
+	case connStatusUnreachable:
+		return "unreachable"
+	case connStatusProhibited:
+		return "prohibited"
+	case connStatusDenied:
+		return "access denied"
+	case connStatusUnknown:
+		fallthrough
+	default:
+		return "unknown"
+	}
+}
+
+// ColorName returns the color name.
+// Eg. success, warning, danger, etc.
+func (status connStatus) ColorName() string {
+	switch status {
+	case connStatusAllowed:
+		return "success"
+	case connStatusUnreachable:
+		return "warning"
+	case connStatusProhibited:
+		return "danger"
+	case connStatusDenied:
+		return "danger"
+	case connStatusUnknown:
+		fallthrough
+	default:
+		return "secondary"
 	}
 }

@@ -42,7 +42,7 @@
   <div class="card-body p-0">
 
     <table class="table table-hover mb-0 fw-light font-monospace">
-      <tbody>
+      <thead>
         <tr>
           <th scope="col" class="bg-body-tertiary">Router</th>
           <th scope="col" class="bg-body-tertiary"></th>
@@ -54,6 +54,7 @@
           <th scope="col" class="bg-body-tertiary"></th>
         </tr>
       </thead>
+      <tbody>
         {{ range .Page.Peerings }}
         <tr>
           <td class="bg-body-tertiary">
@@ -109,6 +110,78 @@
       </form>
     </div> -->
 
+  </div>
+</div>
+
+<div class="card bg-body-tertiary border-0 text-body-emphasis m-3 overflow-hidden">
+  <div class="card-header bg-body-secondary text-body-emphasis">
+    <strong>Connections</strong>
+  </div>
+  <div class="card-body p-0">
+
+    <style>
+      .text-blue-300 {
+        /* color: #3d8bfd; */
+        color: #6ea8fe;
+      }
+      .text-indigo-300 {
+        color: #a370f7;
+      }
+    </style>
+    <table class="table table-hover mb-0 fw-light font-monospace">
+      <thead>
+        <tr>
+          <th scope="col" class="bg-body-tertiary">
+            <span class="text-blue-300">🡽</span>
+            <span class="text-indigo-300">🡿</span>
+          </th>
+          <th scope="col" class="bg-body-tertiary">Protocol</th>
+          <th scope="col" class="bg-body-tertiary">Status</th>
+          <th scope="col" class="bg-body-tertiary">Router</th>
+          <th scope="col" class="bg-body-tertiary">Time</th>
+          <th scope="col" class="bg-body-tertiary">Traffic</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{ range .Page.Connections }}
+        <tr>
+          <td class="bg-body-tertiary">
+            {{ if .Inbound }}
+              <span class="text-indigo-300">🡿 IN</span>
+            {{ else }}
+              <span class="text-blue-300">🡽 OUT</span>
+            {{ end }}
+          </td>
+          <td class="bg-body-tertiary">
+            {{ if .HasPorts }}
+              {{ .LocalPort }}
+              <span class="text-secondary">
+                ⇠{{ .ProtocolName }}⇢
+              </span>
+              {{ .RemotePort }}
+            {{ else }}
+              {{ .ProtocolName }}
+            {{ end }}
+          </td>
+          <td class="bg-body-tertiary">
+            <span class="text-{{ .StatusColor }}">
+              {{ .StatusName }}
+            </span>
+          </td>
+          <td class="bg-body-tertiary">
+            {{ .RemoteIP.StringExpanded }}
+          </td>
+          <td class="bg-body-tertiary">
+            {{ .TimeDescription }}
+          </td>
+          <td class="bg-body-tertiary">
+            <span class="text-blue-300">🡽 {{ .DataOut | filesizeformat }}</span>
+            <span class="text-indigo-300">🡿 {{ .DataIn | filesizeformat }}</span>
+          </td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
   </div>
 </div>
 {{ end }}

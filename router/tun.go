@@ -116,7 +116,7 @@ func (r *Router) handleTunPacket(w *mgr.WorkerCtx, packetData []byte) {
 		protocol:   protocol,
 		localPort:  srcPort,
 		remotePort: dstPort,
-	})
+	}, len(packetData))
 	if status != connStatusAllowed {
 		if err := r.respondWithError(src, packetData, status); err != nil {
 			w.Debug(

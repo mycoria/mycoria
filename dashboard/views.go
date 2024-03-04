@@ -12,6 +12,7 @@ import (
 
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/peering"
+	"github.com/mycoria/mycoria/router"
 	"github.com/mycoria/mycoria/storage"
 )
 
@@ -55,12 +56,14 @@ func (d *Dashboard) overviewPage(w http.ResponseWriter, r *http.Request) {
 		NumGoroutine int
 		MemStats     *runtime.MemStats
 		Peerings     []peering.Link
+		Connections  []router.ExportedConnection
 	}{
 		RequestToken: rToken,
 		NumCPU:       runtime.NumCPU(),
 		NumGoroutine: runtime.NumGoroutine(),
 		MemStats:     memStats,
 		Peerings:     d.instance.Peering().GetLinks(),
+		Connections:  d.instance.Router().ExportConnections(3 * time.Minute),
 	})
 }
 
