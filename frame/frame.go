@@ -35,32 +35,32 @@ type Frame interface {
 	// Will not drop below zero.
 	ReduceTTL(by uint8)
 	// HasFlowFlag returns whether the given flow control flag is set.
-	HasFlowFlag(FlowControlFlag) bool
+	HasFlowFlag(flag FlowControlFlag) bool
 	// SetFlowFlag sets the given flow control flag.
-	SetFlowFlag(FlowControlFlag)
+	SetFlowFlag(flag FlowControlFlag)
 	// RecvRate returns the recv rate.
 	RecvRate() uint8
 	// SetRecvRate sets the recv rate.
-	SetRecvRate(uint8)
+	SetRecvRate(rate uint8)
 
 	// ---
 
 	// MessageType returns the message type.
 	MessageType() MessageType
 	// SetMessageType sets the message type.
-	SetMessageType(MessageType)
+	SetMessageType(msgType MessageType)
 	// SequenceNum returns the sequence number.
 	SequenceNum() uint32
 	// SetSequenceNum sets the sequence number.
-	SetSequenceNum(uint32)
+	SetSequenceNum(seq uint32)
 	// SequenceAck returns the sequence ack number.
 	SequenceAck() uint32
 	// SetSequenceAck sets the sequence ack number.
-	SetSequenceAck(uint32)
+	SetSequenceAck(seq uint32)
 	// SequenceTime returns the sequence time.
 	SequenceTime() time.Time
 	// SetSequenceTime sets the sequence time.
-	SetSequenceTime(time.Time)
+	SetSequenceTime(t time.Time)
 
 	// Src/Dst
 
@@ -105,7 +105,7 @@ type Frame interface {
 	// RecvLink returns the receive link.
 	RecvLink() LinkAccessor
 	// SetRecvLink sets the receive link.
-	SetRecvLink(LinkAccessor)
+	SetRecvLink(recvLink LinkAccessor)
 
 	// Other
 

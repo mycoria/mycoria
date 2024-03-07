@@ -199,6 +199,8 @@ func (r *Router) handleFrame(w *mgr.WorkerCtx, f frame.Frame) error {
 		// If the frame is destined to us, handle as incoming frame.
 		return r.handleIncomingFrame(w, f)
 
+	case f.MessageType() == frame.RouterHopPingDeprecated:
+		fallthrough
 	case f.MessageType() == frame.RouterHopPing:
 		// If the frame is a hop ping, handle as incoming frame.
 		return r.handleIncomingFrame(w, f)
@@ -211,7 +213,7 @@ func (r *Router) handleFrame(w *mgr.WorkerCtx, f frame.Frame) error {
 
 func (r *Router) handleIncomingFrame(w *mgr.WorkerCtx, f frame.Frame) error {
 	switch f.MessageType() {
-	case frame.RouterHopPing, frame.RouterPing:
+	case frame.RouterHopPing, frame.RouterHopPingDeprecated, frame.RouterPing:
 		return r.handlePing(w, f)
 
 	case frame.RouterCtrl:

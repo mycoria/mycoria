@@ -5,9 +5,10 @@ type MessageType uint8
 
 // Message Types.
 const (
-	RouterHopPing MessageType = 0 // multicast, priority, signed
-	RouterPing    MessageType = 1 // unicast, priority, signed
-	RouterCtrl    MessageType = 2 // unicast, priority, encrypted
+	RouterHopPingDeprecated MessageType = 0 // multicast, priority, signed
+	RouterPing              MessageType = 1 // unicast, priority, signed
+	RouterCtrl              MessageType = 2 // unicast, priority, encrypted
+	RouterHopPing           MessageType = 3 // multicast, priority, signed
 
 	NetworkTraffic MessageType = 8 // encrypted
 
@@ -29,7 +30,7 @@ const (
 // Class returns whether the message class.
 func (mt MessageType) Class() MessageClass {
 	switch mt {
-	case RouterHopPing, RouterPing:
+	case RouterHopPing, RouterHopPingDeprecated, RouterPing:
 		return MessageClassSigned
 
 	case RouterCtrl, SessionCtrl:
@@ -46,7 +47,7 @@ func (mt MessageType) Class() MessageClass {
 // IsPriority returns whether the message type is prioritized.
 func (mt MessageType) IsPriority() bool {
 	switch mt {
-	case RouterHopPing, RouterPing, RouterCtrl, SessionCtrl:
+	case RouterHopPing, RouterHopPingDeprecated, RouterPing, RouterCtrl, SessionCtrl:
 		return true
 	case NetworkTraffic, SessionData:
 		return false
@@ -60,7 +61,7 @@ func (mt MessageType) IsEncrypted() bool {
 	switch mt {
 	case RouterCtrl, NetworkTraffic, SessionCtrl, SessionData:
 		return true
-	case RouterHopPing, RouterPing:
+	case RouterHopPing, RouterHopPingDeprecated, RouterPing:
 		return false
 	default:
 		return false
@@ -69,7 +70,7 @@ func (mt MessageType) IsEncrypted() bool {
 
 func (mt MessageType) String() string {
 	switch mt {
-	case RouterHopPing:
+	case RouterHopPing, RouterHopPingDeprecated:
 		return "RouterHopPing"
 	case RouterPing:
 		return "RouterPing"
