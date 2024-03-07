@@ -11,6 +11,14 @@ import (
 	"github.com/mycoria/mycoria/mgr"
 )
 
+// TriggerPeering triggers checking peers and connecting to new peers if needed.
+func (p *Peering) TriggerPeering() {
+	select {
+	case p.triggerPeering <- struct{}{}:
+	default:
+	}
+}
+
 func (p *Peering) connectMgr(w *mgr.WorkerCtx) error {
 	connected := make(map[string]netip.Addr)
 	p.checkConnect(w, connected)
@@ -22,11 +30,15 @@ func (p *Peering) connectMgr(w *mgr.WorkerCtx) error {
 			return nil
 		case <-ticker.C:
 			p.checkConnect(w, connected)
+		case <-p.triggerPeering:
+			p.checkConnect(w, connected)
 		}
 	}
 }
 
 func (p *Peering) checkConnect(w *mgr.WorkerCtx, connected map[string]netip.Addr) {
+	// FIXME: apply/remove dns workaround if zero active connections
+
 	// Connect
 	for _, peeringURL := range p.instance.Config().Router.Connect {
 		// Check if we are already connected.
@@ -46,7 +58,7 @@ func (p *Peering) checkConnect(w *mgr.WorkerCtx, connected map[string]netip.Addr
 		}
 
 		// Connect to router.
-		_, err = p.PeerWith(u, netip.Addr{})
+		newLink, err := p.PeerWith(u, netip.Addr{})
 		if err != nil {
 			w.Warn(
 				"failed to connect",
@@ -55,6 +67,9 @@ func (p *Peering) checkConnect(w *mgr.WorkerCtx, connected map[string]netip.Addr
 			)
 			continue
 		}
+
+		// Add connection to state map.
+		connected[peeringURL] = newLink.Peer()
 	}
 
 	// Connect to the two nearest routers in the address space.
@@ -66,11 +81,11 @@ func (p *Peering) checkConnect(w *mgr.WorkerCtx, connected map[string]netip.Addr
 				"err", err,
 			)
 		} else {
-			var connected int
+			var connectedCnt int
 		connectToNearest:
 			for _, near := range nearest {
 				// Connect to the two nearest reachable routers.
-				if connected >= 2 {
+				if connectedCnt >= 2 {
 					break
 				}
 
@@ -82,7 +97,7 @@ func (p *Peering) checkConnect(w *mgr.WorkerCtx, connected map[string]netip.Addr
 				// Check if we are already connected.
 				if p.GetLink(near.Address.IP) != nil {
 					// Aleady connected!
-					connected++
+					connectedCnt++
 					continue connectToNearest
 				}
 
@@ -114,7 +129,7 @@ func (p *Peering) checkConnect(w *mgr.WorkerCtx, connected map[string]netip.Addr
 						_, err = p.PeerWith(u, netip.Addr{})
 						if err == nil {
 							// Connected!
-							connected++
+							connectedCnt++
 							continue connectToNearest
 						}
 

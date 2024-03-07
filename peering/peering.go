@@ -16,9 +16,10 @@ import (
 
 // Peering is a peering manager.
 type Peering struct {
-	instance     instance
-	mgr          *mgr.Manager
-	frameHandler chan frame.Frame
+	instance       instance
+	mgr            *mgr.Manager
+	frameHandler   chan frame.Frame
+	triggerPeering chan struct{}
 
 	links        map[netip.Addr]Link
 	linksByLabel map[m.SwitchLabel]Link
@@ -46,12 +47,13 @@ type instance interface {
 // New returns a new peering manager.
 func New(instance instance, frameHandler chan frame.Frame) *Peering {
 	p := &Peering{
-		instance:     instance,
-		frameHandler: frameHandler,
-		links:        make(map[netip.Addr]Link),
-		linksByLabel: make(map[m.SwitchLabel]Link),
-		listeners:    make(map[string]Listener),
-		protocols:    make(map[string]Protocol),
+		instance:       instance,
+		frameHandler:   frameHandler,
+		triggerPeering: make(chan struct{}, 1),
+		links:          make(map[netip.Addr]Link),
+		linksByLabel:   make(map[m.SwitchLabel]Link),
+		listeners:      make(map[string]Listener),
+		protocols:      make(map[string]Protocol),
 	}
 
 	return p
@@ -154,6 +156,7 @@ func (p *Peering) AddLink(link Link) error {
 }
 
 // RemoveLink removes the link from the peering list.
+// The link is not closed by this function!
 func (p *Peering) RemoveLink(link Link) {
 	p.linksLock.Lock()
 	defer p.linksLock.Unlock()
@@ -161,6 +164,11 @@ func (p *Peering) RemoveLink(link Link) {
 	delete(p.links, link.Peer())
 	delete(p.linksByLabel, link.SwitchLabel())
 	p.instance.RoutingTable().RemoveNextHop(link.Peer())
+
+	// If we reach zero links, trigger peering.
+	if len(p.links) == 0 && !p.mgr.IsDone() {
+		p.TriggerPeering()
+	}
 }
 
 // CloseLink closes the link to the given peer.
