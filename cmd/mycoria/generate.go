@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -20,18 +23,40 @@ func init() {
 
 var generateCmd = &cobra.Command{
 	Use:  "generate",
-	Args: cobra.ExactArgs(1),
 	RunE: generate,
 }
 
 func generate(cmd *cobra.Command, args []string) error {
+	var (
+		geoMark   string
+		usedGeoIP bool
+	)
+
+	if len(args) >= 1 {
+		geoMark = args[0]
+	}
+	if geoMark == "" {
+		geoIPMark, err := getGeoMarkFromGeoIP()
+		if err != nil {
+			return fmt.Errorf("failed to auto-detect country code: %w", err)
+		}
+		geoMark = geoIPMark
+		usedGeoIP = true
+
+		// Log result.
+		fmt.Fprintf(os.Stderr, "Got country code from geoip: %s\n\n", geoMark)
+	}
+
 	// Get country prefix.
-	prefix, err := m.GetCountryPrefix(args[0])
+	prefix, err := m.GetCountryPrefix(geoMark)
 	if err != nil {
-		if args[0] == "US" {
+		if usedGeoIP {
+			return fmt.Errorf("country code from geoip is invalid (%q), please set as argument", geoMark)
+		}
+		if geoMark == "US" {
 			return fmt.Errorf("invalid country code: in case of the US, please specify the state as US-XX")
 		}
-		return fmt.Errorf("invalid country code: %w", err)
+		return fmt.Errorf("invalid country code %q: %w", geoMark, err)
 	}
 
 	// Generate address.
@@ -94,4 +119,39 @@ func makeDefaultConfig(id *m.Address) config.Store {
 			"status.myco": "fd00::b909",
 		},
 	}
+}
+
+type reallyFreeGeoIPResponse struct {
+	CountryCode string `json:"country_code"`
+	RegionCode  string `json:"region_code"`
+}
+
+func getGeoMarkFromGeoIP() (string, error) {
+	// Get geoip data.
+	resp, err := http.Get("https://reallyfreegeoip.org/json/")
+	if err != nil {
+		return "", fmt.Errorf("fetch geoip data: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	// Read body.
+	bodyData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read geoip response data: %w", err)
+	}
+
+	// Parse response.
+	geoipResponse := &reallyFreeGeoIPResponse{}
+	err = json.Unmarshal(bodyData, geoipResponse)
+	if err != nil {
+		return "", fmt.Errorf("parse geoip response: %w", err)
+	}
+
+	// Return geo marking code.
+	if geoipResponse.CountryCode == "US" {
+		return geoipResponse.CountryCode + "-" + geoipResponse.RegionCode, nil
+	}
+	return geoipResponse.CountryCode, nil
 }
