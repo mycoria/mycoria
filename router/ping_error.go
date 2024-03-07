@@ -185,7 +185,13 @@ func (h *ErrorPingHandler) sendError(to netip.Addr, msgType frame.MessageType, e
 	}
 
 	// Send error.
-	err = h.r.sendPingMsg(to, msgType, 0, errorPingType, uint8(errCode), pingData, false)
+	err = h.r.sendPingMsg(sendPingOpts{
+		dst:      to,
+		msgType:  msgType,
+		pingType: errorPingType,
+		pingCode: uint8(errCode),
+		pingData: pingData,
+	})
 	if err != nil {
 		return fmt.Errorf("send ping: %w", err)
 	}

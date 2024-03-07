@@ -64,7 +64,12 @@ func (h *DisconnectPingHandler) Send(goingDown bool, disconnected []netip.Addr) 
 	}
 
 	// Send announcement.
-	err = h.r.sendPingMsg(m.RouterAddress, frame.RouterPing, 0, disconnectPingType, 0, data, false)
+	err = h.r.sendPingMsg(sendPingOpts{
+		dst:      m.RouterAddress,
+		msgType:  frame.RouterPing,
+		pingType: disconnectPingType,
+		pingData: data,
+	})
 	if err != nil {
 		return fmt.Errorf("send ping: %w", err)
 	}

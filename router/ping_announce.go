@@ -83,7 +83,12 @@ func (h *AnnouncePingHandler) Send(peer netip.Addr) error {
 	}
 
 	// Send announcement.
-	err = h.r.sendPingMsg(m.RouterAddress, frame.RouterHopPing, 0, announcePingType, 0, data, false)
+	err = h.r.sendPingMsg(sendPingOpts{
+		dst:      m.RouterAddress,
+		msgType:  frame.RouterHopPingDeprecated,
+		pingType: announcePingType,
+		pingData: data,
+	})
 	if err != nil {
 		return fmt.Errorf("send ping: %w", err)
 	}

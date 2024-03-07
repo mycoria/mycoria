@@ -94,7 +94,7 @@ type pingPongMsg struct {
 }
 
 // Send sends a pong message to the given destination.
-func (h *PingPongHandler) Send(dstIP netip.Addr, retryPingID uint64) (notify <-chan struct{}, pingID uint64, err error) {
+func (h *PingPongHandler) Send(dstIP netip.Addr, peer bool, retryPingID uint64) (notify <-chan struct{}, pingID uint64, err error) {
 	pingID = retryPingID
 
 	// Create message and marshal it.
@@ -122,7 +122,18 @@ func (h *PingPongHandler) Send(dstIP netip.Addr, retryPingID uint64) (notify <-c
 	if pingID == 0 {
 		pingID = newPingID()
 	}
-	err = h.r.sendPingMsg(dstIP, frame.RouterPing, pingID, pingPongPingType, 0, data, false)
+	opts := sendPingOpts{
+		msgType:  frame.RouterPing,
+		pingID:   pingID,
+		pingType: pingPongPingType,
+		pingData: data,
+	}
+	if peer {
+		opts.peer = dstIP
+	} else {
+		opts.dst = dstIP
+	}
+	err = h.r.sendPingMsg(opts)
 	if err != nil {
 		return nil, 0, fmt.Errorf("send ping: %w", err)
 	}
@@ -158,7 +169,14 @@ func (h *PingPongHandler) handleRequest(_ *mgr.WorkerCtx, f frame.Frame, hdr *Pi
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-	err = h.r.sendPingMsg(f.SrcIP(), frame.RouterPing, hdr.PingID, pingPongPingType, 0, data, true)
+	err = h.r.sendPingMsg(sendPingOpts{
+		dst:      f.SrcIP(),
+		msgType:  frame.RouterPing,
+		pingID:   hdr.PingID,
+		pingType: pingPongPingType,
+		pingData: data,
+		followUp: true,
+	})
 	if err != nil {
 		return fmt.Errorf("send ping pong response: %w", err)
 	}

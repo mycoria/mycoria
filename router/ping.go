@@ -97,22 +97,64 @@ func (r *Router) handlePing(w *mgr.WorkerCtx, f frame.Frame) error {
 	return handler.Handle(w, f, hdr, data)
 }
 
-func (r *Router) sendPingMsg(
-	dst netip.Addr, msgType frame.MessageType,
-	pingID uint64, pingType string, pingCode uint8,
-	pingData []byte, followUp bool,
-) error {
+type sendPingOpts struct { //nolint:maligned
+	// Route to destination.
+	dst netip.Addr
+	// Send to peer.
+	peer netip.Addr
+	// Use message type.
+	msgType frame.MessageType
+	// Define ping ID to use.
+	// A new will be generated if 0.
+	pingID uint64
+	// Define ping type.
+	// Mandatory.
+	pingType string
+	// Define ping code.
+	// Optional and only valid for some ping types.
+	pingCode uint8
+	// Ping data to send.
+	// Mandatory.
+	pingData []byte
+	// Define this message is a response or follow up.
+	followUp bool
+}
+
+func (opts sendPingOpts) validate() error {
+	switch {
+	case opts.dst.IsValid() == opts.peer.IsValid():
+		return errors.New("(only) dst or peer must be set")
+	case opts.msgType != frame.RouterHopPingDeprecated &&
+		opts.msgType != frame.RouterPing &&
+		opts.msgType != frame.RouterCtrl &&
+		opts.msgType != frame.RouterHopPing:
+		return fmt.Errorf("%s is not a valid ping message type", opts.msgType)
+	case opts.pingType == "":
+		return errors.New("ping type is mandatory")
+	case len(opts.pingData) == 0:
+		return errors.New("ping data is mandatory")
+	default:
+		return nil
+	}
+}
+
+func (r *Router) sendPingMsg(opts sendPingOpts) error {
+	// Validate options.
+	if err := opts.validate(); err != nil {
+		return fmt.Errorf("internal error: invalid ping options: %w", err)
+	}
+
 	// Get ping ID, if not set.
-	if pingID == 0 {
-		pingID = newPingID()
+	if opts.pingID == 0 {
+		opts.pingID = newPingID()
 	}
 
 	// Build and marshal header.
 	hdr := PingHeader{
-		PingID:    pingID,
-		PingType:  pingType,
-		PingCode:  pingCode,
-		FollowUp:  followUp,
+		PingID:    opts.pingID,
+		PingType:  opts.pingType,
+		PingCode:  opts.pingCode,
+		FollowUp:  opts.followUp,
 		AddrHash:  r.instance.Identity().Hash,
 		KeyType:   r.instance.Identity().Type,
 		PublicKey: r.instance.Identity().PublicKey,
@@ -126,16 +168,22 @@ func (r *Router) sendPingMsg(
 	}
 
 	// Build complete frame data.
-	requiredSize := 2 + len(hdrData) + len(pingData)
+	requiredSize := 2 + len(hdrData) + len(opts.pingData)
 	frameData := make([]byte, requiredSize)
 	frameData[0] = 1
 	frameData[1] = uint8(len(hdrData))
 	copy(frameData[2:], hdrData)
-	copy(frameData[2+len(hdrData):], pingData)
+	copy(frameData[2+len(hdrData):], opts.pingData)
 
 	// Make frame.
+	dst := opts.dst
+	sendToPeer := false
+	if !dst.IsValid() {
+		dst = opts.peer
+		sendToPeer = true
+	}
 	f, err := r.instance.FrameBuilder().NewFrameV1(
-		r.instance.Identity().IP, dst, msgType,
+		r.instance.Identity().IP, dst, opts.msgType,
 		nil, frameData, nil,
 	)
 	if err != nil {
@@ -151,7 +199,7 @@ func (r *Router) sendPingMsg(
 			return fmt.Errorf("sign frame: %w", err)
 		}
 
-	case msgType.IsEncrypted():
+	case opts.msgType.IsEncrypted():
 		// If there is no session and the message type is encrypted,
 		// abort with error.
 		return errors.New("encryption is not set up")
@@ -188,11 +236,18 @@ func (r *Router) sendPingMsg(
 		return nil
 	}
 
-	// Send frame to destination.
+	// Send frame.
+	// Send to peer.
+	if sendToPeer {
+		if err := r.instance.Switch().ForwardByPeer(f, opts.peer); err != nil {
+			return fmt.Errorf("send ping frame to peer: %w", err)
+		}
+		return nil
+	}
+	// Route to destination.
 	if err := r.RouteFrame(f); err != nil {
 		return fmt.Errorf("send ping frame: %w", err)
 	}
-
 	return nil
 }
 
@@ -210,6 +265,9 @@ func (r *Router) parsePingMsg(f frame.Frame) (hdr *PingHeader, body []byte, err 
 	// Unseal ping message.
 	if err := f.Unseal(session); err != nil {
 		switch {
+		case f.MessageType() == frame.RouterHopPingDeprecated &&
+			errors.Is(err, state.ErrImmediateDuplicateFrame):
+			fallthrough
 		case f.MessageType() == frame.RouterHopPing &&
 			errors.Is(err, state.ErrImmediateDuplicateFrame):
 			// Hop pings may have immediate duplicate frames, as the pings hop and

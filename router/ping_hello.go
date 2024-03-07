@@ -132,7 +132,13 @@ func (h *HelloPingHandler) Send(dstIP netip.Addr) (notify <-chan struct{}, err e
 	}
 
 	// Send new ping.
-	err = h.r.sendPingMsg(dstIP, frame.RouterPing, pingState.pingID, helloPingType, 0, data, false)
+	err = h.r.sendPingMsg(sendPingOpts{
+		dst:      dstIP,
+		msgType:  frame.RouterPing,
+		pingID:   pingState.pingID,
+		pingType: helloPingType,
+		pingData: data,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("send ping: %w", err)
 	}
@@ -177,7 +183,14 @@ func (h *HelloPingHandler) handlePingHelloRequest(w *mgr.WorkerCtx, f frame.Fram
 	if err != nil {
 		return fmt.Errorf("init client key exchange: %w", err)
 	}
-	err = h.r.sendPingMsg(f.SrcIP(), frame.RouterPing, hdr.PingID, helloPingType, 0, data, true)
+	err = h.r.sendPingMsg(sendPingOpts{
+		dst:      f.SrcIP(),
+		msgType:  frame.RouterPing,
+		pingID:   hdr.PingID,
+		pingType: helloPingType,
+		pingData: data,
+		followUp: true,
+	})
 	if err != nil {
 		return fmt.Errorf("send hello response: %w", err)
 	}
