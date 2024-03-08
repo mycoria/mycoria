@@ -24,6 +24,10 @@ import (
 // - sweep with TTL of 64 and 10s timeout
 // - query: hop by hop discovery with direct messages only
 
+// ErrWouldLoop is returned when a packet cannot be routed because it would be
+// sent back where it was received from.
+var ErrWouldLoop = errors.New("not routing: would loop")
+
 // RouteFrame forwards the given frame to the next hop based on the destination IP.
 func (r *Router) RouteFrame(f frame.Frame) error {
 	// Check if destination is routable.
@@ -39,7 +43,7 @@ func (r *Router) RouteFrame(f frame.Frame) error {
 
 	// Check if this returns the frame back to where it came from.
 	if f.RecvLink() != nil && rte.NextHop == f.RecvLink().Peer() {
-		return errors.New("not routing: would loop")
+		return ErrWouldLoop
 	}
 
 	// Forward to peer.

@@ -239,5 +239,16 @@ func (r *Router) handleIncomingFrame(w *mgr.WorkerCtx, f frame.Frame) error {
 
 func (r *Router) handleUnsolicitedFrame(f frame.Frame) error {
 	// For now, just forward.
-	return r.RouteFrame(f)
+	err := r.RouteFrame(f)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, ErrWouldLoop):
+		if err := r.ErrorPing.SendUnreachable(f.SrcIP(), f.DstIP()); err != nil {
+			return fmt.Errorf("send unreachable ping: %w", err)
+		}
+		return nil
+	default:
+		return err
+	}
 }
