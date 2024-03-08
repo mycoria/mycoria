@@ -143,6 +143,11 @@ func (h *HelloPingHandler) Send(dstIP netip.Addr) (notify <-chan struct{}, err e
 		return nil, fmt.Errorf("send ping: %w", err)
 	}
 
+	h.r.mgr.Debug(
+		"sent hello ping",
+		"router", dstIP,
+	)
+
 	// Ping is sent, add expiry and save to state.
 	pingState.expires = time.Now().Add(30 * time.Second)
 	h.setActive(dstIP, pingState)
@@ -196,7 +201,7 @@ func (h *HelloPingHandler) handlePingHelloRequest(w *mgr.WorkerCtx, f frame.Fram
 	}
 
 	w.Debug(
-		"hello (server) successful",
+		"hello ping successful (server)",
 		"router", f.SrcIP(),
 	)
 	return nil
@@ -241,7 +246,7 @@ func (h *HelloPingHandler) handlePingHelloResponse(w *mgr.WorkerCtx, f frame.Fra
 	h.setActive(f.SrcIP(), pingState)
 
 	w.Debug(
-		"hello (client) successful",
+		"hello ping successful (client)",
 		"router", f.SrcIP(),
 	)
 	return nil

@@ -148,10 +148,10 @@ func (em *EventMgr[T]) Submit(event T) {
 
 // clean removes all canceled subscriptions and callbacks.
 func (em *EventMgr[T]) clean() {
-	slices.DeleteFunc[[]*EventSubscription[T], *EventSubscription[T]](em.subs, func(es *EventSubscription[T]) bool {
+	em.subs = slices.DeleteFunc[[]*EventSubscription[T], *EventSubscription[T]](em.subs, func(es *EventSubscription[T]) bool {
 		return es.canceled.Load()
 	})
-	slices.DeleteFunc[[]*EventCallback[T], *EventCallback[T]](em.callbacks, func(ec *EventCallback[T]) bool {
+	em.callbacks = slices.DeleteFunc[[]*EventCallback[T], *EventCallback[T]](em.callbacks, func(ec *EventCallback[T]) bool {
 		return ec.canceled.Load()
 	})
 }

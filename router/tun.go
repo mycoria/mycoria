@@ -118,18 +118,15 @@ func (r *Router) handleTunPacket(w *mgr.WorkerCtx, packetData []byte) {
 		remotePort: dstPort,
 	}
 	status, statusUpdate := r.checkPolicy(w, false, key, len(packetData))
+	// Check for similar status to reduce network clutter.
+	// Also, error pings are heavily rate limited.
+	// This ensure more reliable and stable network response.
+	if similarStatus := r.checkSimilarOutboundStatus(w, key); similarStatus != connStatusUnknown {
+		status = similarStatus
+	}
+	// Return network response if not allowed.
 	if status != connStatusAllowed {
 		if err := r.respondWithError(src, packetData, status); err != nil {
-			w.Debug(
-				"failed to send icmp error",
-				"err", err,
-			)
-		}
-		return
-	}
-	// Check for similar status to reduce network clutter.
-	if similarStatus := r.checkSimilarOutboundStatus(w, key); similarStatus != connStatusUnknown {
-		if err := r.respondWithError(src, packetData, similarStatus); err != nil {
 			w.Debug(
 				"failed to send icmp error",
 				"err", err,
@@ -239,21 +236,25 @@ func (r *Router) respondWithError(to netip.Addr, packetData []byte, status connS
 	switch status {
 	case connStatusUnreachable:
 		// Reply with ICMP error 1.3: "address unreachable".
+		// r.mgr.Debug("sent icmp error 1.3 address unreachable")
 		return r.sendUnreachableError(to, 3, packetData)
 
 	case connStatusProhibited:
 		// Denied locally.
 		// Reply with ICMP error 1.1: "communication with destination administratively prohibited".
+		// r.mgr.Debug("sent icmp error 1.1 administratively prohibited")
 		return r.sendUnreachableError(to, 1, packetData)
 
 	case connStatusDenied:
 		// Denied by remote.
 		// Reply with ICMP error 1.5: "source address failed ingress/egress policy".
+		// r.mgr.Debug("sent icmp error 1.5 denied: failed policy")
 		return r.sendUnreachableError(to, 5, packetData)
 
 	case connStatusRejected:
 		// Rejected for technical or operational reason.
 		// Reply with ICMP error 1.6: "reject route to destination".
+		// r.mgr.Debug("sent icmp error 1.6 reject route")
 		return r.sendUnreachableError(to, 6, packetData)
 
 	case connStatusUnknown, connStatusAllowed:
@@ -279,7 +280,9 @@ func (r *Router) sendUnreachableError(to netip.Addr, code int, inData []byte) er
 			Data: unreachData,
 		},
 	}
-	icmpData, err := icmpMsg.Marshal(nil)
+	icmpData, err := icmpMsg.Marshal(
+		icmp.IPv6PseudoHeader(config.DefaultAPIAddress.AsSlice(), to.AsSlice()),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to build icmp error packet: %w", err)
 	}

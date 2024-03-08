@@ -100,7 +100,7 @@ func (p *Peering) createPeeringRequest(client bool) (*peeringRequestState, frame
 	f, err := p.instance.FrameBuilder().NewFrameV1(
 		p.instance.Identity().IP,
 		m.RouterAddress,
-		frame.RouterHopPingDeprecated,
+		frame.RouterPing,
 		nil,
 		msg,
 		nil,

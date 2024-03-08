@@ -220,6 +220,13 @@ func (h *ErrorPingHandler) sendError(to netip.Addr, msgType frame.MessageType, e
 		return fmt.Errorf("send ping: %w", err)
 	}
 
+	// Log that we sent an error.
+	h.r.mgr.Debug(
+		"sent error ping",
+		"router", to,
+		"err", errCode,
+	)
+
 	return nil
 }
 
@@ -278,4 +285,21 @@ func (h *ErrorPingHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingHead
 	}
 
 	return nil
+}
+
+func (errCode errCode) String() string {
+	switch errCode {
+	case pingCodeErrorGeneric:
+		return "generic"
+	case pingCodeErrorUnreachable:
+		return "unreachable"
+	case pingCodeErrorNoEncryptionKeys:
+		return "no encryption keys"
+	case pingCodeErrorAccessDenied:
+		return "access denied"
+	case pingCodeErrorRejected:
+		return "rejected"
+	default:
+		return "unknown"
+	}
 }

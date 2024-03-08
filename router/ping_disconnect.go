@@ -74,6 +74,18 @@ func (h *DisconnectPingHandler) Send(goingDown bool, disconnected []netip.Addr) 
 		return fmt.Errorf("send ping: %w", err)
 	}
 
+	if goingDown {
+		h.r.mgr.Info(
+			"sent disconnect ping",
+			"disconnect", "all",
+		)
+	} else {
+		h.r.mgr.Info(
+			"sent disconnect ping",
+			"disconnect", len(disconnected),
+		)
+	}
+
 	return nil
 }
 

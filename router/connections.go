@@ -98,7 +98,7 @@ func (r *Router) checkPolicy(w *mgr.WorkerCtx, inbound bool, connKey connStateKe
 				"incoming connection allowed",
 				"router", connKey.remoteIP,
 				"protocol", connKey.protocol,
-				"port", connKey.localIP,
+				"port", connKey.localPort,
 			)
 		} else {
 			connState.status.Store(uint32(connStatusDenied))
@@ -106,7 +106,7 @@ func (r *Router) checkPolicy(w *mgr.WorkerCtx, inbound bool, connKey connStateKe
 				"incoming connection denied",
 				"router", connKey.remoteIP,
 				"protocol", connKey.protocol,
-				"port", connKey.localIP,
+				"port", connKey.localPort,
 			)
 		}
 	} else {
@@ -117,7 +117,7 @@ func (r *Router) checkPolicy(w *mgr.WorkerCtx, inbound bool, connKey connStateKe
 				"outgoing connection allowed",
 				"router", connKey.remoteIP,
 				"protocol", connKey.protocol,
-				"port", connKey.remoteIP,
+				"port", connKey.remotePort,
 			)
 		} else {
 			connState.status.Store(uint32(connStatusProhibited))
@@ -125,7 +125,7 @@ func (r *Router) checkPolicy(w *mgr.WorkerCtx, inbound bool, connKey connStateKe
 				"outgoing connection prohibited",
 				"router", connKey.remoteIP,
 				"protocol", connKey.protocol,
-				"port", connKey.remoteIP,
+				"port", connKey.remotePort,
 			)
 		}
 	}
@@ -154,7 +154,7 @@ stateSearch:
 			connStatus(state.status.Load()) == connStatusUnreachable:
 			// Router seems to be unreachable.
 			connState.status.Store(uint32(connStatusUnreachable))
-			w.Info(
+			w.Debug(
 				"outgoing connection auto-blocked due to unreachable router",
 				"router", connKey.remoteIP,
 				"protocol", connKey.protocol,
@@ -169,7 +169,7 @@ stateSearch:
 			switch connStatus(state.status.Load()) { //nolint:exhaustive
 			case connStatusDenied:
 				connState.status.Store(uint32(connStatusDenied))
-				w.Info(
+				w.Debug(
 					"outgoing connection auto-denied due to recent similar connection",
 					"router", connKey.remoteIP,
 					"protocol", connKey.protocol,
@@ -179,7 +179,7 @@ stateSearch:
 
 			case connStatusRejected:
 				connState.status.Store(uint32(connStatusRejected))
-				w.Info(
+				w.Debug(
 					"outgoing connection auto-rejected due to recent similar connection",
 					"router", connKey.remoteIP,
 					"protocol", connKey.protocol,

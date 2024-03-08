@@ -141,7 +141,10 @@ func (r *Router) Start(mgr *mgr.Manager) error {
 
 	for i := 0; i < runtime.NumCPU(); i++ {
 		mgr.Go("router", r.frameHandler)
-		mgr.Go("tun handler", r.handleTun)
+
+		if !r.instance.Config().System.DisableTun {
+			mgr.Go("tun handler", r.handleTun)
+		}
 	}
 
 	return nil
@@ -217,11 +220,8 @@ func (r *Router) handleFrame(w *mgr.WorkerCtx, f frame.Frame) error {
 
 func (r *Router) handleIncomingFrame(w *mgr.WorkerCtx, f frame.Frame) error {
 	switch f.MessageType() {
-	case frame.RouterHopPing, frame.RouterHopPingDeprecated, frame.RouterPing:
+	case frame.RouterPing, frame.RouterCtrl, frame.RouterHopPing, frame.RouterHopPingDeprecated:
 		return r.handlePing(w, f)
-
-	case frame.RouterCtrl:
-		return errors.New("not yet supported")
 
 	case frame.NetworkTraffic:
 		return r.handleIncomingTraffic(w, f)
