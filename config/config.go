@@ -21,6 +21,8 @@ import (
 type Config struct {
 	Store
 
+	APIListen netip.AddrPort
+
 	Friends       []Friend
 	FriendsByName map[string]Friend
 	FriendsByIP   map[netip.Addr]Friend
@@ -103,6 +105,13 @@ func (s Store) parse(test bool) (*Config, error) { //nolint:maintidx // Function
 	}
 	if !test && c.System.StatePath != "" && !filepath.IsAbs(c.System.StatePath) {
 		return nil, fmt.Errorf("system.statePath must be an absolute path")
+	}
+	if c.System.APIListen != "" {
+		var err error
+		c.APIListen, err = netip.ParseAddrPort(c.System.APIListen)
+		if err != nil {
+			return nil, fmt.Errorf("system.apiListen ist not a valid IP and port")
+		}
 	}
 
 	// Check if there is any way to connect.

@@ -3,6 +3,8 @@ package mycoria
 import (
 	"errors"
 	"fmt"
+	"log/slog"
+	"net"
 	"strings"
 
 	"github.com/mycoria/mycoria/api/dns"
@@ -75,34 +77,66 @@ func New(version string, c *config.Config) (*Instance, error) {
 	}
 	instance.state = state.New(instance, instance.storage)
 
-	// Create tunnel interface and add router IP.
+	// Listen for API, if custom.
+	var apiListener net.Listener
+	if c.APIListen.IsValid() {
+		slog.Info("creating custom listener")
+		apiListener, err = net.Listen("tcp", c.APIListen.String())
+		if err != nil {
+			return nil, fmt.Errorf("listen on %s for API: %w", c.APIListen, err)
+		}
+	}
+
+	// Create tun device, netstack, listeners and DNS server.
 	if !c.System.DisableTun {
+		slog.Info("creating tun device")
+
+		// Create tunnel interface and add router IP.
 		instance.tunDevice, err = tun.Create(instance)
 		if err != nil {
 			return nil, fmt.Errorf("create tun device: %w", err)
 		}
+
+		// Create internal network stack.
+		instance.netstack, err = netstack.New(instance, instance.tunDevice)
+		if err != nil {
+			return nil, fmt.Errorf("create local API netstack: %w", err)
+		}
+
+		// Create API listener, if needed.
+		if apiListener == nil {
+			apiListener, err = instance.netstack.ListenTCP(80)
+			if err != nil {
+				return nil, fmt.Errorf("listen on API netstack: %w", err)
+			}
+		}
+
+		// Create DNS server.
+		packetConn, err := instance.netstack.ListenUDP(53)
+		if err != nil {
+			return nil, fmt.Errorf("listen on API netstack: %w", err)
+		}
+		instance.dns, err = dns.New(instance, packetConn, instance.storage)
+		if err != nil {
+			return nil, fmt.Errorf("create local http API: %w", err)
+		}
 	}
 
-	// Create API.
-	instance.netstack, err = netstack.New(instance, instance.tunDevice)
-	if err != nil {
-		return nil, fmt.Errorf("create local API netstack: %w", err)
-	}
-	ln, err := instance.netstack.ListenTCP(80)
-	if err != nil {
-		return nil, fmt.Errorf("listen on API netstack: %w", err)
-	}
-	instance.api, err = httpapi.New(instance, ln)
-	if err != nil {
-		return nil, fmt.Errorf("create local http API: %w", err)
-	}
-	packetConn, err := instance.netstack.ListenUDP(53)
-	if err != nil {
-		return nil, fmt.Errorf("listen on API netstack: %w", err)
-	}
-	instance.dns, err = dns.New(instance, packetConn, instance.storage)
-	if err != nil {
-		return nil, fmt.Errorf("create local http API: %w", err)
+	// Create API server and dashboard, if there is a listener.
+	var dash *dashboard.Dashboard
+	if apiListener != nil {
+		slog.Info("creating api and dashboard")
+
+		// Create API server.
+		instance.api, err = httpapi.New(instance, apiListener)
+		if err != nil {
+			return nil, fmt.Errorf("create local http API: %w", err)
+		}
+		// Create dashboard.
+		dash, err = dashboard.New(instance)
+		if err != nil {
+			return nil, fmt.Errorf("create dashboard: %w", err)
+		}
 	}
 
 	// Create router.
@@ -120,12 +154,6 @@ func New(version string, c *config.Config) (*Instance, error) {
 	// Add protocols.
 	instance.peering.AddProtocol("tcp", peering.ProtocolTCP)
 
-	// Create dashboard.
-	dashboard, err := dashboard.New(instance)
-	if err != nil {
-		return nil, fmt.Errorf("create dashboard: %w", err)
-	}
-
 	// Add all modules to instance group.
 	instance.Group = mgr.NewGroup(
 		instance.storage,
@@ -140,7 +168,7 @@ func New(version string, c *config.Config) (*Instance, error) {
 		instance.switchr,
 		instance.router,
 
-		dashboard,
+		dash,
 	)
 
 	return instance, nil

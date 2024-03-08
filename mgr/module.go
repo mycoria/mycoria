@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 )
@@ -38,12 +39,22 @@ func NewGroup(modules ...Module) *Group {
 
 	// Initialize groups modules.
 	for _, m := range modules {
-		if m != nil {
-			g.modules = append(g.modules, &groupModule{
-				module: m,
-				mgr:    newManager(g.ctx, makeModuleName(m), "module"),
-			})
+		// Skip non-values.
+		switch {
+		case m == nil:
+			// Skip nil values to allow for cleaner code.
+			continue
+		case reflect.ValueOf(m).IsNil():
+			// If nil values are given via a struct, they are will be interfaces to a
+			// nil type. Ignore these too.
+			continue
 		}
+
+		// Add module to group.
+		g.modules = append(g.modules, &groupModule{
+			module: m,
+			mgr:    newManager(g.ctx, makeModuleName(m), "module"),
+		})
 	}
 
 	return g
