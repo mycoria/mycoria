@@ -20,6 +20,8 @@ const DefaultTunName = "mycoria"
 
 // Device represents a tun device.
 type Device struct {
+	mgr *mgr.Manager
+
 	linkName  string
 	linkIndex int //nolint:structcheck,unused // Used on linux.
 
@@ -91,16 +93,12 @@ func Create(instance instance) (*Device, error) {
 
 // Start starts brings the device online and starts workers.
 func (d *Device) Start(mgr *mgr.Manager) error {
+	d.mgr = mgr
+
 	if err := d.StartInterface(); err != nil {
 		return err
 	}
-
-	if err := d.applyChromiumWorkaround(mgr); err != nil {
-		mgr.Warn(
-			"chromium workaround failed",
-			"err", err,
-		)
-	}
+	d.CheckWorkarounds()
 
 	mgr.Go("read packets", d.tunReader)
 	mgr.Go("write packets", d.tunWriter)
@@ -112,6 +110,23 @@ func (d *Device) Start(mgr *mgr.Manager) error {
 func (d *Device) Stop(mgr *mgr.Manager) error {
 	mgr.Cancel()
 	return d.Close()
+}
+
+// CheckWorkarounds may be called to make sure any workarounds are correctly
+// applied after the network or related resources have changed.
+func (d *Device) CheckWorkarounds() {
+	// Ignore call if device is nil.
+	if d == nil {
+		return
+	}
+
+	// Apply Chromium workaround.
+	if err := d.applyChromiumWorkaround(d.mgr); err != nil {
+		d.mgr.Warn(
+			"failed to apply chromium workaround",
+			"err", err,
+		)
+	}
 }
 
 // applyChromiumWorkaround applies a workaround to enable Chromium to query AAAA records.

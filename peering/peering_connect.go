@@ -37,7 +37,15 @@ func (p *Peering) connectMgr(w *mgr.WorkerCtx) error {
 }
 
 func (p *Peering) checkConnect(w *mgr.WorkerCtx, connected map[string]netip.Addr) {
-	// FIXME: apply/remove dns workaround if zero active connections
+	// Check if worker is done.
+	if w.IsDone() {
+		return
+	}
+
+	// Check network workaround if we lost all links.
+	if p.LinkCnt() == 0 {
+		p.instance.TunDevice().CheckWorkarounds()
+	}
 
 	// Connect
 	for _, peeringURL := range p.instance.Config().Router.Connect {

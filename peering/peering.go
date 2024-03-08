@@ -12,6 +12,7 @@ import (
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/mgr"
 	"github.com/mycoria/mycoria/state"
+	"github.com/mycoria/mycoria/tun"
 )
 
 // Peering is a peering manager.
@@ -39,8 +40,11 @@ type instance interface {
 	Version() string
 	Config() *config.Config
 	Identity() *m.Address
-	State() *state.State
 	FrameBuilder() *frame.Builder
+
+	State() *state.State
+
+	TunDevice() *tun.Device
 	RoutingTable() *m.RoutingTable
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/mycoria/mycoria/frame"
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/state"
+	"github.com/mycoria/mycoria/tun"
 )
 
 var testData = []byte("The quick brown fox jumps over the lazy dog. ")
@@ -124,6 +125,7 @@ type testInstance struct {
 	ConfigStub       *config.Config
 	IdentityStub     *m.Address
 	StateStub        *state.State
+	TunDeviceStub    *tun.Device
 	FrameBuilderStub *frame.Builder
 	RoutingTableStub *m.RoutingTable
 }
@@ -148,6 +150,11 @@ func (stub *testInstance) Identity() *m.Address {
 // State returns the state manager.
 func (stub *testInstance) State() *state.State {
 	return stub.StateStub
+}
+
+// TunDevice returns the tun device.
+func (stub *testInstance) TunDevice() *tun.Device {
+	return stub.TunDeviceStub
 }
 
 // FrameBuilder returns the frame builder.
