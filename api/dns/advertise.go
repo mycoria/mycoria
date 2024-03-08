@@ -14,6 +14,11 @@ import (
 
 // SendRouterAdvertisement sends a router advertisement to the tun interface to configure DNS via RDNSS and DNSSL.
 func (srv *Server) SendRouterAdvertisement(ifAddr netip.Addr) error {
+	// Ignore if tun device is disabled.
+	if srv.instance.Config().System.DisableTun {
+		return nil
+	}
+
 	// RFC4861 & RFC4191
 	advert := &ndp.RouterAdvertisement{
 		CurrentHopLimit: 64,

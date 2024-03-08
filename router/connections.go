@@ -35,9 +35,10 @@ type connStatus uint32
 const (
 	connStatusUnknown connStatus = iota
 	connStatusAllowed
-	connStatusUnreachable
-	connStatusProhibited // Denied locally.
-	connStatusDenied     // Denied by remote.
+	connStatusUnreachable // No route to dst.
+	connStatusProhibited  // Denied locally.
+	connStatusDenied      // Denied by remote.
+	connStatusRejected    // Technical or operational issue.
 )
 
 func (r *Router) getConnState(key connStateKey) (*connStateEntry, bool) {
@@ -132,6 +133,66 @@ func (r *Router) checkPolicy(w *mgr.WorkerCtx, inbound bool, connKey connStateKe
 	return connStatus(connState.status.Load()), connState.notify
 }
 
+func (r *Router) checkSimilarOutboundStatus(w *mgr.WorkerCtx, connKey connStateKey) (status connStatus) {
+	connState, ok := r.getConnState(connKey)
+	if !ok {
+		return connStatusUnknown
+	}
+
+	r.connStatesLock.RLock()
+	defer r.connStatesLock.RUnlock()
+
+	mustBeNewerThan := time.Now().Add(-errorRecvCooldown).Unix()
+stateSearch:
+	for key, state := range r.connStates {
+		switch {
+		case key == connKey:
+			// Skip own entry.
+		case state.lastSeen.Load() < mustBeNewerThan:
+		// Entry too old to take into account.
+		case key.remoteIP == connKey.remoteIP &&
+			connStatus(state.status.Load()) == connStatusUnreachable:
+			// Router seems to be unreachable.
+			connState.status.Store(uint32(connStatusUnreachable))
+			w.Info(
+				"outgoing connection auto-blocked due to unreachable router",
+				"router", connKey.remoteIP,
+				"protocol", connKey.protocol,
+				"port", connKey.remoteIP,
+			)
+			break stateSearch
+
+		case key.remoteIP == connKey.remoteIP &&
+			key.protocol == connKey.protocol &&
+			key.remotePort == connKey.remotePort:
+			// Router cannot handle connection.
+			switch connStatus(state.status.Load()) { //nolint:exhaustive
+			case connStatusDenied:
+				connState.status.Store(uint32(connStatusDenied))
+				w.Info(
+					"outgoing connection auto-denied due to recent similar connection",
+					"router", connKey.remoteIP,
+					"protocol", connKey.protocol,
+					"port", connKey.remoteIP,
+				)
+				break stateSearch
+
+			case connStatusRejected:
+				connState.status.Store(uint32(connStatusRejected))
+				w.Info(
+					"outgoing connection auto-rejected due to recent similar connection",
+					"router", connKey.remoteIP,
+					"protocol", connKey.protocol,
+					"port", connKey.remoteIP,
+				)
+				break stateSearch
+			}
+		}
+	}
+
+	return connStatus(connState.status.Load())
+}
+
 func (r *Router) outboundAllowedTo(dst netip.Addr) bool {
 	// Check if router is isolated.
 	if !r.instance.Config().Router.Isolate {
@@ -143,7 +204,7 @@ func (r *Router) outboundAllowedTo(dst netip.Addr) bool {
 	return ok
 }
 
-func (r *Router) markUnreachable(dst netip.Addr) {
+func (r *Router) markRouter(status connStatus, dst netip.Addr) {
 	r.connStatesLock.RLock()
 	defer r.connStatesLock.RUnlock()
 
@@ -151,11 +212,11 @@ states:
 	for key, entry := range r.connStates {
 		if key.remoteIP == dst {
 			// Mark router as unreachable.
-			entry.status.Store(uint32(connStatusUnreachable))
+			entry.status.Store(uint32(status))
 			// Notify waiting workers.
 			for {
 				select {
-				case entry.notify <- connStatusUnreachable:
+				case entry.notify <- status:
 				default:
 					continue states
 				}
@@ -164,7 +225,7 @@ states:
 	}
 }
 
-func (r *Router) markAccessDenied(dst netip.Addr, protocol uint8, port uint16) {
+func (r *Router) markConnectionDst(status connStatus, dst netip.Addr, protocol uint8, port uint16) {
 	r.connStatesLock.RLock()
 	defer r.connStatesLock.RUnlock()
 
@@ -174,11 +235,11 @@ states:
 			key.protocol == protocol &&
 			key.remotePort == port {
 			// Mark destination service as denied.
-			entry.status.Store(uint32(connStatusDenied))
+			entry.status.Store(uint32(status))
 			// Notify waiting workers.
 			for {
 				select {
-				case entry.notify <- connStatusDenied:
+				case entry.notify <- status:
 				default:
 					continue states
 				}
@@ -334,6 +395,8 @@ func (status connStatus) Name() string {
 		return "prohibited"
 	case connStatusDenied:
 		return "access denied"
+	case connStatusRejected:
+		return "rejected"
 	case connStatusUnknown:
 		fallthrough
 	default:
@@ -353,6 +416,8 @@ func (status connStatus) ColorName() string {
 		return "danger"
 	case connStatusDenied:
 		return "danger"
+	case connStatusRejected:
+		return "warning"
 	case connStatusUnknown:
 		fallthrough
 	default:

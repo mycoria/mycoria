@@ -96,7 +96,11 @@ func New(instance instance, routerConfig Config) (*Router, error) {
 		connStates:   make(map[connStateKey]*connStateEntry),
 		instance:     instance,
 	}
-	r.handleTraffic.Store(true)
+	if r.instance.Config().System.DisableTun {
+		r.handleTraffic.Store(false)
+	} else {
+		r.handleTraffic.Store(true)
+	}
 
 	// Set and register ping handlers.
 	r.HelloPing = NewHelloPingHandler(r)

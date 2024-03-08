@@ -128,10 +128,25 @@ func (h *ErrorPingHandler) Clean(w *mgr.WorkerCtx) error {
 
 // Error Ping Codes.
 const (
-	pingCodeErrorGeneric          errCode = 0
-	pingCodeErrorUnreachable      errCode = 1
+	// Undefined error.
+	// Drop connection.
+	pingCodeErrorGeneric errCode = 0
+
+	// No route to router.
+	// Reply with ICMP error 1.3: "address unreachable".
+	pingCodeErrorUnreachable errCode = 1
+
+	// Encryption is not set up.
 	pingCodeErrorNoEncryptionKeys errCode = 2
-	pingCodeErrorAccessDenied     errCode = 3
+
+	// Denied by policy.
+	// Reply with ICMP error 1.5: "source address failed ingress/egress policy".
+	// Note: If denied locally, ICMP error 1.1 is used instead.
+	pingCodeErrorAccessDenied errCode = 3
+
+	// Rejected for technical or operational reason.
+	// Reply with ICMP error 1.6: "reject route to destination".
+	pingCodeErrorRejected errCode = 4
 )
 
 type unreachableMsg struct {
@@ -164,6 +179,15 @@ func (h *ErrorPingHandler) SendNoEncryptionKeys(to netip.Addr) error {
 // SendAccessDenied sends an access denied error.
 func (h *ErrorPingHandler) SendAccessDenied(to netip.Addr, dstIP netip.Addr, protocol uint8, dstPort uint16) error {
 	return h.sendError(to, frame.RouterCtrl, pingCodeErrorAccessDenied, &accessDeniedMsg{
+		DstIP:    dstIP,
+		Protocol: protocol,
+		DstPort:  dstPort,
+	})
+}
+
+// SendRejected sends a rejected error.
+func (h *ErrorPingHandler) SendRejected(to netip.Addr, dstIP netip.Addr, protocol uint8, dstPort uint16) error {
+	return h.sendError(to, frame.RouterCtrl, pingCodeErrorRejected, &accessDeniedMsg{
 		DstIP:    dstIP,
 		Protocol: protocol,
 		DstPort:  dstPort,
@@ -223,7 +247,7 @@ func (h *ErrorPingHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingHead
 		if err != nil {
 			return fmt.Errorf("unmarshal: %w", err)
 		}
-		h.r.markUnreachable(msg.Unreachable)
+		h.r.markRouter(connStatusUnreachable, msg.Unreachable)
 
 	case pingCodeErrorNoEncryptionKeys:
 		// Removing the encryption setting will trigger the next packet to that
@@ -231,14 +255,18 @@ func (h *ErrorPingHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingHead
 		// Error is only returned when router has no session.
 		_ = h.r.instance.State().SetEncryptionSession(f.SrcIP(), nil)
 
-	case pingCodeErrorAccessDenied:
+	case pingCodeErrorAccessDenied, pingCodeErrorRejected:
 		// Parse error message.
 		msg := &accessDeniedMsg{}
 		err := cbor.Unmarshal(data, msg)
 		if err != nil {
 			return fmt.Errorf("unmarshal: %w", err)
 		}
-		h.r.markAccessDenied(msg.DstIP, msg.Protocol, msg.DstPort)
+		if errCode(hdr.PingCode) == pingCodeErrorAccessDenied {
+			h.r.markConnectionDst(connStatusDenied, msg.DstIP, msg.Protocol, msg.DstPort)
+		} else {
+			h.r.markConnectionDst(connStatusRejected, msg.DstIP, msg.Protocol, msg.DstPort)
+		}
 
 	default:
 		w.Debug(

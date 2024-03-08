@@ -110,15 +110,26 @@ func (r *Router) handleTunPacket(w *mgr.WorkerCtx, packetData []byte) {
 		return
 	}
 	// Check policy.
-	status, statusUpdate := r.checkPolicy(w, false, connStateKey{
+	key := connStateKey{
 		localIP:    src,
 		remoteIP:   dst,
 		protocol:   protocol,
 		localPort:  srcPort,
 		remotePort: dstPort,
-	}, len(packetData))
+	}
+	status, statusUpdate := r.checkPolicy(w, false, key, len(packetData))
 	if status != connStatusAllowed {
 		if err := r.respondWithError(src, packetData, status); err != nil {
+			w.Debug(
+				"failed to send icmp error",
+				"err", err,
+			)
+		}
+		return
+	}
+	// Check for similar status to reduce network clutter.
+	if similarStatus := r.checkSimilarOutboundStatus(w, key); similarStatus != connStatusUnknown {
+		if err := r.respondWithError(src, packetData, similarStatus); err != nil {
 			w.Debug(
 				"failed to send icmp error",
 				"err", err,
@@ -227,18 +238,23 @@ func (r *Router) respondWithError(to netip.Addr, packetData []byte, status connS
 
 	switch status {
 	case connStatusUnreachable:
-		// Reply with 1.3 "address unreachable".
+		// Reply with ICMP error 1.3: "address unreachable".
 		return r.sendUnreachableError(to, 3, packetData)
 
 	case connStatusProhibited:
 		// Denied locally.
-		// TODO: Reply with 1.1 "communication with destination administratively prohibited".
+		// Reply with ICMP error 1.1: "communication with destination administratively prohibited".
 		return r.sendUnreachableError(to, 1, packetData)
 
 	case connStatusDenied:
 		// Denied by remote.
-		// TODO: Reply with 1.5 "source address failed ingress/egress policy".
+		// Reply with ICMP error 1.5: "source address failed ingress/egress policy".
 		return r.sendUnreachableError(to, 5, packetData)
+
+	case connStatusRejected:
+		// Rejected for technical or operational reason.
+		// Reply with ICMP error 1.6: "reject route to destination".
+		return r.sendUnreachableError(to, 6, packetData)
 
 	case connStatusUnknown, connStatusAllowed:
 		fallthrough

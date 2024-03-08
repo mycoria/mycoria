@@ -30,16 +30,20 @@ type Module interface {
 
 // NewGroup returns a new group of modules.
 func NewGroup(modules ...Module) *Group {
+	// Create group.
 	g := &Group{
 		modules: make([]*groupModule, 0, len(modules)),
 	}
 	g.initGroupContext()
 
+	// Initialize groups modules.
 	for _, m := range modules {
-		g.modules = append(g.modules, &groupModule{
-			module: m,
-			mgr:    newManager(g.ctx, makeModuleName(m), "module"),
-		})
+		if m != nil {
+			g.modules = append(g.modules, &groupModule{
+				module: m,
+				mgr:    newManager(g.ctx, makeModuleName(m), "module"),
+			})
+		}
 	}
 
 	return g

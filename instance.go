@@ -76,9 +76,11 @@ func New(version string, c *config.Config) (*Instance, error) {
 	instance.state = state.New(instance, instance.storage)
 
 	// Create tunnel interface and add router IP.
-	instance.tunDevice, err = tun.Create(instance)
-	if err != nil {
-		return nil, fmt.Errorf("create tun device: %w", err)
+	if !c.System.DisableTun {
+		instance.tunDevice, err = tun.Create(instance)
+		if err != nil {
+			return nil, fmt.Errorf("create tun device: %w", err)
+		}
 	}
 
 	// Create API.

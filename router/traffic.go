@@ -13,14 +13,6 @@ import (
 )
 
 func (r *Router) handleIncomingTraffic(w *mgr.WorkerCtx, f frame.Frame) error {
-	// Check if handling is enabled.
-	if !r.handleTraffic.Load() {
-		// Traffic handling is disabled.
-		// TODO: Send back explicit discconect ping?
-		// The generic one might not reach a far away router.
-		return nil
-	}
-
 	// Get session.
 	session := r.instance.State().GetSession(f.SrcIP())
 	if session == nil {
@@ -55,6 +47,14 @@ func (r *Router) handleIncomingTraffic(w *mgr.WorkerCtx, f frame.Frame) error {
 		// TODO: Handle additional IPv6 headers.
 		srcPort = m.GetUint16(packetData[40:42])
 		dstPort = m.GetUint16(packetData[42:44])
+	}
+
+	// Check if handling is enabled or
+	if !r.handleTraffic.Load() {
+		if err := r.ErrorPing.SendRejected(src, dst, protocol, dstPort); err != nil {
+			return fmt.Errorf("send rejected ping: %w", err)
+		}
+		return nil
 	}
 
 	// Check integrity.
