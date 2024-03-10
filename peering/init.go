@@ -46,12 +46,15 @@ type peeringRequestState struct { //nolint:maligned
 }
 
 type peeringRequest struct {
-	RouterVersion string          `cbor:"v,omitempty"  json:"v,omitempty"`
-	Universe      string          `cbor:"u,omitempty"  json:"u,omitempty"`
-	LiteMode      bool            `cbor:"lm,omitempty" json:"lm,omitempty"`
-	Address       m.PublicAddress `cbor:"a,omitempty"  json:"a,omitempty"`
-	Challenge     []byte          `cbor:"c,omitempty"  json:"c,omitempty"`
-	LinkVersion   int             `cbor:"lv,omitempty" json:"lv,omitempty"`
+	RouterVersion string `cbor:"v,omitempty"  json:"v,omitempty"`
+	Universe      string `cbor:"u,omitempty"  json:"u,omitempty"`
+	LiteMode      bool   `cbor:"lm,omitempty" json:"lm,omitempty"`
+
+	Address   m.PublicAddress `cbor:"a,omitempty" json:"a,omitempty"`
+	Challenge []byte          `cbor:"c,omitempty" json:"c,omitempty"`
+
+	LinkVersion int `cbor:"lv,omitempty"   json:"lv,omitempty"`
+	TunMTU      int `cbor:"tmtu,omitempty" json:"tmtu,omitempty"`
 }
 
 type peeringResponse struct {
@@ -90,6 +93,7 @@ func (p *Peering) createPeeringRequest(client bool) (*peeringRequestState, frame
 		Address:       p.instance.Identity().PublicAddress,
 		Challenge:     challenge,
 		LinkVersion:   1,
+		TunMTU:        p.instance.Config().TunMTU(),
 	}
 	msg, err := cbor.Marshal(r)
 	if err != nil {
@@ -211,6 +215,11 @@ func (state *peeringRequestState) handlePeeringRequest(in frame.Frame) (frame.Fr
 	// Check link version.
 	if r.LinkVersion != 1 {
 		return nil, errors.New("unsupported link version")
+	}
+
+	// Apply metadata.
+	if r.TunMTU > 0 {
+		session.SetTunMTU(r.TunMTU)
 	}
 
 	// Populate state.
