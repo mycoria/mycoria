@@ -51,6 +51,7 @@
           <th scope="col" class="bg-body-tertiary">Latency</th>
           <th scope="col" class="bg-body-tertiary">Uptime</th>
           <th scope="col" class="bg-body-tertiary">Started</th>
+          <th scope="col" class="bg-body-tertiary">Traffic</th>
           <th scope="col" class="bg-body-tertiary"></th>
         </tr>
       </thead>
@@ -83,6 +84,10 @@
           </td>
           <td class="bg-body-tertiary">
             {{ .Started.Format "02.01.06 15:04:05 MST" }}
+          </td>
+          <td class="bg-body-tertiary">
+            <span class="text-blue-300">🡿 {{ .BytesIn | filesizeformat }}</span>
+            <span class="text-indigo-300">🡽 {{ .BytesOut | filesizeformat }}</span>
           </td>
           <td class="bg-body-tertiary">
             <form action="" method="POST">
@@ -175,8 +180,8 @@
             {{ .TimeDescription }}
           </td>
           <td class="bg-body-tertiary">
-            <span class="text-blue-300">🡽 {{ .DataOut | filesizeformat }}</span>
-            <span class="text-indigo-300">🡿 {{ .DataIn | filesizeformat }}</span>
+            <span class="text-blue-300">🡿 {{ .DataIn | filesizeformat }}</span>
+            <span class="text-indigo-300">🡽 {{ .DataOut | filesizeformat }}</span>
           </td>
         </tr>
         {{ end }}

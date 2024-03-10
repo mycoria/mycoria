@@ -70,6 +70,12 @@ type Link interface {
 	// calculates and sets the new average.
 	AddMeasuredLatency(latency time.Duration)
 
+	// BytesIn returns the total amount of bytes received via the link.
+	BytesIn() uint64
+
+	// BytesOut returns the total amount of bytes sent via the link.
+	BytesOut() uint64
+
 	// FlowControlIndicator returns a flow control flag that indicates the
 	// pressure on the sending queue of this link.
 	FlowControlIndicator() frame.FlowControlFlag
@@ -129,6 +135,11 @@ type LinkBase struct { //nolint:maligned
 	measuredLatencies [10]time.Duration
 	// measuredLatenciesNext holds the next index to use of measuredLatencies.
 	measuredLatenciesNext int
+
+	// bytesIn records the total amount of bytes received via this connection.
+	bytesIn atomic.Uint64
+	// bytesOut records the total amount of bytes sent via this connection.
+	bytesOut atomic.Uint64
 }
 
 var _ Link = &LinkBase{}
@@ -274,6 +285,16 @@ func (link *LinkBase) AddMeasuredLatency(latency time.Duration) {
 	if link.latency == 0 {
 		link.latency = 1
 	}
+}
+
+// BytesIn returns the total amount of bytes received via the link.
+func (link *LinkBase) BytesIn() uint64 {
+	return link.bytesIn.Load()
+}
+
+// BytesOut returns the total amount of bytes sent via the link.
+func (link *LinkBase) BytesOut() uint64 {
+	return link.bytesOut.Load()
 }
 
 // FlowControlIndicator returns a flow control flag that indicates the
@@ -463,6 +484,7 @@ func (link *LinkBase) readFrame(b *frame.Builder) (frame.Frame, error) {
 		b.ReturnPooledSlice(pooledSlice)
 		return nil, fmt.Errorf("read frame: %w", err)
 	}
+	link.bytesIn.Add(uint64(len(data)))
 
 	// Parse LinkFrame.
 	if link.encSession != nil {
@@ -577,6 +599,7 @@ func (link *LinkBase) writeData(data []byte) error {
 		written += n
 	}
 
+	link.bytesOut.Add(uint64(written))
 	return nil
 }
 

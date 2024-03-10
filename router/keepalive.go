@@ -64,6 +64,7 @@ func (r *Router) keepAlivePeer(w *mgr.WorkerCtx, link peering.Link, fastCheck bo
 		pingID      uint64
 		err         error
 		sentFirstAt = time.Now()
+		bytesRcvd   = link.BytesIn()
 	)
 
 	for {
@@ -74,6 +75,17 @@ func (r *Router) keepAlivePeer(w *mgr.WorkerCtx, link peering.Link, fastCheck bo
 
 		// Close if ping fails persistently.
 		if fails >= 5 || (fastCheck && fails >= 1) {
+			// Check if the link received any data.
+			if link.BytesIn() > bytesRcvd {
+				// We apparently received data, so link cannot be dead.
+				w.Warn(
+					"keep-alive failed, but link is active (received data)",
+					"router", link.Peer(),
+				)
+				return
+			}
+
+			// Link is down, close it.
 			link.Close(func() {
 				w.Warn(
 					"link seems down, closing",
@@ -131,7 +143,7 @@ func (r *Router) keepAlivePeer(w *mgr.WorkerCtx, link peering.Link, fastCheck bo
 			}
 			return
 
-		case <-time.After(time.Second):
+		case <-time.After(time.Second * time.Duration(1+fails*2)):
 			fails++
 			w.Warn(
 				"keep-alive timed out",
