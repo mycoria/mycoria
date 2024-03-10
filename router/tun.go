@@ -174,9 +174,10 @@ func (r *Router) handleTunPacket(w *mgr.WorkerCtx, packetData []byte) {
 			}
 			return
 
-		case <-time.After(1 * time.Second):
-			// Wait for 1 second in hot path, blocking one worker.
+		case <-time.After(200 * time.Millisecond):
+			// Wait for 200ms in hot path, blocking one worker.
 			// TODO: Is this a good idea?
+			return
 
 		case <-w.Done():
 			return
