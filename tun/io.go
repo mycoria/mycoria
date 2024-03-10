@@ -1,40 +1,76 @@
 package tun
 
 import (
+	"errors"
 	"runtime"
+
+	"golang.zx2c4.com/wireguard/tun"
 
 	"github.com/mycoria/mycoria/mgr"
 )
 
-// TODO: Read more at once.
+const readSegments = 32
 
 func (d *Device) tunReader(w *mgr.WorkerCtx) error {
 	builder := d.instance.FrameBuilder()
 	getMTU := d.instance.Config().TunMTU
-
-	mtu := getMTU()
-	pooledSlice := builder.GetPooledSlice(mtu)
-	sizes := []int{mtu}
+	sizes := make([]int, readSegments)
+	slices := make([][]byte, readSegments)
 
 	for {
-		sizes[0] = mtu
-		packets, err := d.Read([][]byte{pooledSlice}, sizes, 0)
+		// Refill all empty segments.
+		mtu := getMTU()
+		for i := 0; i < readSegments; i++ {
+			if sizes[i] == 0 {
+				sizes[i] = mtu
+				slices[i] = builder.GetPooledSlice(mtu)
+			}
+		}
+
+		// Read from tun device.
+		segments, err := d.Read(slices, sizes, 0)
 		if err != nil {
 			// Check if we are done before handling the error.
 			if w.IsDone() {
 				return nil
 			}
 
-			// TODO: Read sometimes returns ErrTooManySegments
-			// This might be due to (missing?) offset.
-			// Code location: https://github.com/WireGuard/wireguard-go/blob/12269c2761734b15625017d8565745096325392f/tun/offload_linux.go#L924
-			// Probably only linux is affected.
+			// Important: If an error is returned, there might still be successfully
+			// read packets.
+			switch {
+			case errors.Is(err, tun.ErrTooManySegments):
+				// TODO: Read sometimes returns ErrTooManySegments
+				// This is probably because it would have liked to send more segments,
+				// but there werent any left to write to.
+				// Code location: https://github.com/WireGuard/wireguard-go/blob/12269c2761734b15625017d8565745096325392f/tun/offload_linux.go#L924
+				// Probably only linux is affected.
+				w.Error("not enough read segments, consider increasing", "segments", readSegments)
 
-			w.Error("failed to read packet", "err", err)
-			continue
+			default:
+				w.Error("failed to read packet", "err", err)
+			}
+
 		}
-		if packets == 1 {
-			data := pooledSlice[:sizes[0]]
+
+		// Process read segments.
+		for i := 0; i < segments; i++ {
+			// Skip empty segments.
+			if sizes[i] == 0 {
+				continue
+			}
+
+			// w.Debug(
+			// 	"reading packets from tun",
+			// 	"slice", i,
+			// 	"size", sizes[i],
+			// )
+
+			// Get data from return values.
+			data := slices[i][:sizes[i]]
+			sizes[i] = 0
+			slices[i] = nil
+
+			// Submit data to next handler.
 			select {
 			case d.RecvRaw <- data:
 			default:
@@ -44,9 +80,6 @@ func (d *Device) tunReader(w *mgr.WorkerCtx) error {
 					return nil
 				}
 			}
-
-			mtu := getMTU()
-			pooledSlice = builder.GetPooledSlice(mtu)
 		}
 	}
 }
