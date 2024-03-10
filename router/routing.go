@@ -24,9 +24,15 @@ import (
 // - sweep with TTL of 64 and 10s timeout
 // - query: hop by hop discovery with direct messages only
 
-// ErrWouldLoop is returned when a packet cannot be routed because it would be
-// sent back where it was received from.
-var ErrWouldLoop = errors.New("not routing: would loop")
+var (
+	// ErrWouldLoop is returned when a packet cannot be routed because it would
+	// be sent back where it was received from.
+	ErrWouldLoop = errors.New("not routing: would loop")
+
+	// ErrTableEmpty is returned when a packet cannot be routed because the
+	// routing table is empty.
+	ErrTableEmpty = errors.New("not routing: table empty")
+)
 
 // RouteFrame forwards the given frame to the next hop based on the destination IP.
 func (r *Router) RouteFrame(f frame.Frame) error {
@@ -38,7 +44,7 @@ func (r *Router) RouteFrame(f frame.Frame) error {
 	// Lookup routing table for best next hop.
 	rte, _ := r.table.LookupNearest(f.DstIP())
 	if rte == nil {
-		return errors.New("not routing: table empty")
+		return ErrTableEmpty
 	}
 
 	// Check if this returns the frame back to where it came from.

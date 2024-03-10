@@ -255,12 +255,21 @@ func (h *ErrorPingHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingHead
 			return fmt.Errorf("unmarshal: %w", err)
 		}
 		h.r.markRouter(connStatusUnreachable, msg.Unreachable)
+		w.Debug(
+			"received unreachable error",
+			"router", f.SrcIP(),
+			"unreachable", msg.Unreachable,
+		)
 
 	case pingCodeErrorNoEncryptionKeys:
 		// Removing the encryption setting will trigger the next packet to that
 		// router to setup up new encryption keys.
 		// Error is only returned when router has no session.
 		_ = h.r.instance.State().SetEncryptionSession(f.SrcIP(), nil)
+		w.Debug(
+			"received no encryption keys error",
+			"router", f.SrcIP(),
+		)
 
 	case pingCodeErrorAccessDenied, pingCodeErrorRejected:
 		// Parse error message.
@@ -271,8 +280,22 @@ func (h *ErrorPingHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingHead
 		}
 		if errCode(hdr.PingCode) == pingCodeErrorAccessDenied {
 			h.r.markConnectionDst(connStatusDenied, msg.DstIP, msg.Protocol, msg.DstPort)
+			w.Debug(
+				"received access denied error",
+				"router", f.SrcIP(),
+				"dstIP", msg.DstIP,
+				"protocol", msg.Protocol,
+				"dstPort", msg.DstIP,
+			)
 		} else {
 			h.r.markConnectionDst(connStatusRejected, msg.DstIP, msg.Protocol, msg.DstPort)
+			w.Debug(
+				"received rejected error",
+				"router", f.SrcIP(),
+				"dstIP", msg.DstIP,
+				"protocol", msg.Protocol,
+				"dstPort", msg.DstIP,
+			)
 		}
 
 	default:
