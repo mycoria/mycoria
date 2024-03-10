@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mycoria/mycoria/m"
@@ -33,6 +34,7 @@ type Session struct {
 
 	signing    *SigningSession
 	encryption *EncryptionSession
+	mtu        atomic.Int32
 
 	lock  sync.Mutex
 	state *State
@@ -64,6 +66,14 @@ func (s *Session) Signing() *SigningSession {
 	return s.signing
 }
 
+// SetEncryptionSession sets the encryption session.
+func (s *Session) SetEncryptionSession(encSession *EncryptionSession) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.encryption = encSession
+}
+
 // Encryption returns the encryption session.
 func (s *Session) Encryption() *EncryptionSession {
 	s.lock.Lock()
@@ -75,6 +85,21 @@ func (s *Session) Encryption() *EncryptionSession {
 	}
 
 	return s.encryption
+}
+
+// SetTunMTU sets the reported tun device MTU of that router.
+func (s *Session) SetTunMTU(mtu int) {
+	// Raise to minimum 1280 mtu.
+	if mtu > 0 && mtu < 1280 {
+		mtu = 1280
+	}
+
+	s.mtu.Store(int32(mtu))
+}
+
+// TunMTU returns the tun device MTU of that router.
+func (s *Session) TunMTU() int {
+	return int(s.mtu.Load())
 }
 
 // inUse marks the session as in use.

@@ -89,12 +89,16 @@ func (h *HelloPingHandler) Clean(w *mgr.WorkerCtx) error {
 type HelloPingRequest struct {
 	KeyExchange     []byte `cbor:"kx,omitempty"  json:"kx,omitempty"`
 	KeyExchangeType string `cbor:"kxt,omitempty" json:"kxt,omitempty"`
+
+	MTU int `cbor:"mtu,omitempty" json:"mtu,omitempty"`
 }
 
 // HelloPingResponse is a hello ping response.
 type HelloPingResponse struct {
 	KeyExchange     []byte `cbor:"kx,omitempty"  json:"kx,omitempty"`
 	KeyExchangeType string `cbor:"kxt,omitempty" json:"kxt,omitempty"`
+
+	MTU int `cbor:"mtu,omitempty" json:"mtu,omitempty"`
 
 	Err string `cbor:"err,omitempty" json:"err,omitempty"`
 }
@@ -125,6 +129,7 @@ func (h *HelloPingHandler) Send(dstIP netip.Addr) (notify <-chan struct{}, err e
 	request := HelloPingRequest{
 		KeyExchange:     kxKey,
 		KeyExchangeType: kxType,
+		MTU:             h.r.instance.Config().TunMTU(),
 	}
 	data, err := cbor.Marshal(&request)
 	if err != nil {
@@ -178,11 +183,15 @@ func (h *HelloPingHandler) handlePingHelloRequest(w *mgr.WorkerCtx, f frame.Fram
 	if err != nil {
 		return fmt.Errorf("server key exchange: %w", err)
 	}
+	if request.MTU > 0 {
+		session.SetTunMTU(request.MTU)
+	}
 
 	// Create response and send it.
 	response := HelloPingResponse{
 		KeyExchange:     kxKey,
 		KeyExchangeType: kxType,
+		MTU:             h.r.instance.Config().TunMTU(),
 	}
 	data, err = cbor.Marshal(&response)
 	if err != nil {
@@ -235,9 +244,15 @@ func (h *HelloPingHandler) handlePingHelloResponse(w *mgr.WorkerCtx, f frame.Fra
 		return fmt.Errorf("complete client key exchange: %w", err)
 	}
 	pingState.encSession.InitCleanup()
-	err = h.r.instance.State().SetEncryptionSession(f.SrcIP(), pingState.encSession)
-	if err != nil {
-		return fmt.Errorf("set encryption session: %w", err)
+
+	// Save to session.
+	session := h.r.instance.State().GetSession(f.SrcIP())
+	if session == nil {
+		return fmt.Errorf("internal error: router %s unknown", f.SrcIP())
+	}
+	session.SetEncryptionSession(pingState.encSession)
+	if response.MTU > 0 {
+		session.SetTunMTU(response.MTU)
 	}
 
 	// Notify waiters, set cooldown (to block too quick requests) and save.

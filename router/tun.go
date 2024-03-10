@@ -141,19 +141,21 @@ func (r *Router) handleTunPacket(w *mgr.WorkerCtx, packetData []byte) {
 		// Setup encryption with hello ping.
 		notify, err := r.HelloPing.Send(dst)
 		if err != nil {
-			if errors.Is(err, ErrAlreadyActive) {
+			switch {
+			case errors.Is(err, ErrTableEmpty):
+				// Ignore packets if we can't route them.
+			case errors.Is(err, ErrAlreadyActive):
 				w.Debug(
 					"hello ping already active, dropping additional packet",
 					"dst", dst,
 				)
-				return
+			default:
+				w.Warn(
+					"hello ping failed",
+					"dst", dst,
+					"err", err,
+				)
 			}
-
-			w.Warn(
-				"hello ping failed",
-				"dst", dst,
-				"err", err,
-			)
 			return
 		}
 
@@ -189,6 +191,19 @@ func (r *Router) handleTunPacket(w *mgr.WorkerCtx, packetData []byte) {
 			)
 			return
 		}
+	}
+
+	// Check MTU.
+	dstMTU := session.TunMTU()
+	if dstMTU != 0 && len(packetData) > dstMTU {
+		// Packet is too big for MTU, notify OS.
+		if err := r.sendICMP6PacketTooBig(src, dstMTU, packetData); err != nil {
+			w.Debug(
+				"failed to send icmp6 packet too big error",
+				"err", err,
+			)
+		}
+		return
 	}
 
 	// Make new frame from data.
@@ -237,25 +252,25 @@ func (r *Router) respondWithError(to netip.Addr, packetData []byte, status connS
 	case connStatusUnreachable:
 		// Reply with ICMP error 1.3: "address unreachable".
 		// r.mgr.Debug("sent icmp error 1.3 address unreachable")
-		return r.sendUnreachableError(to, 3, packetData)
+		return r.sendICMP6Unreachable(to, 3, packetData)
 
 	case connStatusProhibited:
 		// Denied locally.
 		// Reply with ICMP error 1.1: "communication with destination administratively prohibited".
 		// r.mgr.Debug("sent icmp error 1.1 administratively prohibited")
-		return r.sendUnreachableError(to, 1, packetData)
+		return r.sendICMP6Unreachable(to, 1, packetData)
 
 	case connStatusDenied:
 		// Denied by remote.
 		// Reply with ICMP error 1.5: "source address failed ingress/egress policy".
 		// r.mgr.Debug("sent icmp error 1.5 denied: failed policy")
-		return r.sendUnreachableError(to, 5, packetData)
+		return r.sendICMP6Unreachable(to, 5, packetData)
 
 	case connStatusRejected:
 		// Rejected for technical or operational reason.
 		// Reply with ICMP error 1.6: "reject route to destination".
 		// r.mgr.Debug("sent icmp error 1.6 reject route")
-		return r.sendUnreachableError(to, 6, packetData)
+		return r.sendICMP6Unreachable(to, 6, packetData)
 
 	case connStatusUnknown, connStatusAllowed:
 		fallthrough
@@ -265,21 +280,38 @@ func (r *Router) respondWithError(to netip.Addr, packetData []byte, status connS
 	}
 }
 
-func (r *Router) sendUnreachableError(to netip.Addr, code int, inData []byte) error {
-	// Get response data.
-	unreachData := inData
-	if len(unreachData) > 48 {
-		unreachData = unreachData[:48]
+func (r *Router) sendICMP6Unreachable(to netip.Addr, code int, packetData []byte) error {
+	packetBody := packetData
+	if len(packetBody) > 48 {
+		packetBody = packetBody[:48]
 	}
 
-	// Create ICMP message.
-	icmpMsg := icmp.Message{
+	return r.sendICMP6(to, icmp.Message{
 		Type: ipv6.ICMPTypeDestinationUnreachable,
 		Code: code,
 		Body: &icmp.DstUnreach{
-			Data: unreachData,
+			Data: packetBody,
 		},
+	})
+}
+
+func (r *Router) sendICMP6PacketTooBig(to netip.Addr, mtu int, packetData []byte) error {
+	packetBody := packetData
+	if len(packetBody) > 48 {
+		packetBody = packetBody[:48]
 	}
+
+	return r.sendICMP6(to, icmp.Message{
+		Type: ipv6.ICMPTypePacketTooBig,
+		Body: &icmp.PacketTooBig{
+			MTU:  mtu,
+			Data: packetBody,
+		},
+	})
+}
+
+func (r *Router) sendICMP6(to netip.Addr, icmpMsg icmp.Message) error {
+	// Build ICMP packet.
 	icmpData, err := icmpMsg.Marshal(
 		icmp.IPv6PseudoHeader(config.DefaultAPIAddress.AsSlice(), to.AsSlice()),
 	)
