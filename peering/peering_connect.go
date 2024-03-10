@@ -20,18 +20,33 @@ func (p *Peering) TriggerPeering() {
 }
 
 func (p *Peering) connectMgr(w *mgr.WorkerCtx) error {
+	var ticks int
+	ticker := time.NewTicker(time.Second)
 	connected := make(map[string]netip.Addr)
-	p.checkConnect(w, connected)
 
-	ticker := time.NewTicker(time.Minute)
+	p.checkConnect(w, connected)
 	for {
 		select {
-		case <-w.Done():
-			return nil
 		case <-ticker.C:
-			p.checkConnect(w, connected)
+			ticks++
+			switch {
+			case ticks%60 == 0:
+				// Every minute.
+				p.checkConnect(w, connected)
+			case ticks < 10 && p.LinkCnt() == 0:
+				// Every second for 10s while having no links.
+				p.checkConnect(w, connected)
+			case ticks < 60 && ticks%5 == 0 && p.LinkCnt() == 0:
+				// Every 5 seconds for 1m while having no links.
+				p.checkConnect(w, connected)
+			}
+
 		case <-p.triggerPeering:
 			p.checkConnect(w, connected)
+			ticks = 0 // Signal no links.
+
+		case <-w.Done():
+			return nil
 		}
 	}
 }

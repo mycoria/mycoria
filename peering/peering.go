@@ -78,6 +78,8 @@ func (p *Peering) Start(m *mgr.Manager) error {
 
 // Stop stops all listeners and links.
 func (p *Peering) Stop(mgr *mgr.Manager) error {
+	p.mgr.Cancel()
+
 	p.closeAllListeners()
 	p.closeAllLinks()
 
