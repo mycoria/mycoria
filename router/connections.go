@@ -146,6 +146,10 @@ func (r *Router) checkSimilarOutboundStatus(w *mgr.WorkerCtx, connKey connStateK
 stateSearch:
 	for key, state := range r.connStates {
 		switch {
+		case state.inbound:
+			// Skip inbound.
+			// This is especially important as leftovers from a previous outgoing
+			// connction may be recognized as an incoming connection after a restart.
 		case key == connKey:
 			// Skip own entry.
 		case state.lastSeen.Load() < mustBeNewerThan:
