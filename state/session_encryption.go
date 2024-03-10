@@ -186,6 +186,11 @@ func (s *EncryptionSession) initFinalize(reverse bool, keyContext string) error 
 		s.outKey = key1
 		s.outCipher = c1
 	}
+
+	// Reset sequence handlers.
+	s.prioSeqHandler.Reset()
+	s.reglSeqHandler.Reset()
+
 	return nil
 }
 
