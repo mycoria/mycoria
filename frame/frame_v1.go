@@ -73,13 +73,13 @@ type FrameV1 struct { //nolint:golint
 }
 
 const (
-	frameV1MinSize = 40 + // Header
+	frameV1MinSize = 48 + // Header
 		1 + // Switch Block Length
 		2 + // Message Data Length
 		1 + // At least 1 byte of Message Data
 		16 // Smallest Auth
 
-	frameV1BaseSize = 40 + // Header
+	frameV1BaseSize = 48 + // Header
 		1 + // Switch Block Length
 		2 // Message Data Length
 
@@ -163,8 +163,9 @@ func (f *FrameV1) initFrame(
 		f.pooledSlice = ps
 	}
 
-	// Set offset and overhead.
-	f.data = f.pooledSlice[offset : len(f.pooledSlice)-overhead]
+	// Set offset.
+	// Overhead is what is left over after f.setData.
+	f.data = f.pooledSlice[offset:]
 	f.psDataOffset = offset
 
 	// Set all data.
@@ -539,11 +540,19 @@ func (f *FrameV1) FrameDataWithMargins(offset, overhead int) ([]byte, error) {
 	start := f.psDataOffset - offset
 	end := f.psDataOffset + len(f.data) + overhead
 	if start < 0 {
-		return nil, fmt.Errorf("margins out of bound: request offset of %d, but only %d is available", offset, f.psDataOffset)
+		return nil, fmt.Errorf(
+			"margins out of bound: request offset of %d, but only %d is available (%d/%d)",
+			offset, f.psDataOffset,
+			len(f.data), len(f.pooledSlice),
+		)
 	}
 	if end > len(f.pooledSlice) {
-		return nil, fmt.Errorf("margins out of bound: request overhead of %d, but only %d is available", overhead,
-			len(f.pooledSlice)-(f.psDataOffset+len(f.data)))
+		return nil, fmt.Errorf(
+			"margins out of bound: request overhead of %d, but only %d is available (%d/%d)",
+			overhead,
+			len(f.pooledSlice)-(f.psDataOffset+len(f.data)),
+			len(f.data), len(f.pooledSlice),
+		)
 	}
 
 	return f.pooledSlice[start:end], nil

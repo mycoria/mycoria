@@ -11,6 +11,7 @@ type Builder struct {
 	fiveHBytePool      sync.Pool
 	fifteenHBytePool   sync.Pool
 	fiveKBytePool      sync.Pool
+	nineKBytePool      sync.Pool
 	sixtyFiveKBytePool sync.Pool
 
 	frameV1Pool sync.Pool
@@ -24,6 +25,7 @@ const (
 	fiveHByteSize      = 500 + 100
 	fifteenHByteSize   = 1500 + 100
 	fiveKByteSize      = 5000 + 100
+	nineKByteSize      = 9500 + 100
 	sixtyFiveKByteSize = 65535 + 40 + 100 // Max IPv6 packet size + IPv6 header
 )
 
@@ -38,6 +40,9 @@ func NewFrameBuilder() *Builder {
 		},
 		fiveKBytePool: sync.Pool{
 			New: func() any { return make([]byte, fiveKByteSize) },
+		},
+		nineKBytePool: sync.Pool{
+			New: func() any { return make([]byte, nineKByteSize) },
 		},
 		sixtyFiveKBytePool: sync.Pool{
 			New: func() any { return make([]byte, sixtyFiveKByteSize) },
@@ -60,6 +65,8 @@ func (b *Builder) GetPooledSlice(minSize int) (pooledSlice []byte) {
 		return b.fifteenHBytePool.Get().([]byte) //nolint:forcetypeassert
 	case minSize <= fiveKByteSize:
 		return b.fiveKBytePool.Get().([]byte) //nolint:forcetypeassert
+	case minSize <= nineKByteSize:
+		return b.nineKBytePool.Get().([]byte) //nolint:forcetypeassert
 	case minSize <= sixtyFiveKByteSize:
 		return b.sixtyFiveKBytePool.Get().([]byte) //nolint:forcetypeassert
 	default:
@@ -85,6 +92,8 @@ func (b *Builder) ReturnPooledSlice(pooledSlice []byte) {
 		b.fifteenHBytePool.Put(pooledSlice) //nolint:staticcheck
 	case fiveKByteSize:
 		b.fiveKBytePool.Put(pooledSlice) //nolint:staticcheck
+	case nineKByteSize:
+		b.nineKBytePool.Put(pooledSlice) //nolint:staticcheck
 	case sixtyFiveKByteSize:
 		b.sixtyFiveKBytePool.Put(pooledSlice) //nolint:staticcheck
 	default:

@@ -4,7 +4,7 @@ import "net"
 
 const (
 	// DefaultTunMTU is used for tun devices.
-	DefaultTunMTU = 4500
+	DefaultTunMTU = 9000
 
 	// DefaultFrameSize is the default expected frame size based on the default tun mtu.
 	DefaultFrameSize = DefaultTunMTU - IPv6HeaderMTUSize - TCPHeaderMTUSize - LinkFrameSize - FrameSizeEncrypted
