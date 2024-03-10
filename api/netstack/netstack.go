@@ -72,8 +72,7 @@ func New(instance instance, tunDevice *tun.Device) (*NetStack, error) {
 		return nil, fmt.Errorf("failed to enable TCP SACK: %v", tErr)
 	}
 	// Create API endpoint to communicate with stack.
-	// TODO: Should the MTU here be the same as the TUN device?
-	ns.stackIO = channel.New(128, 1500, "")
+	ns.stackIO = channel.New(128, uint32(instance.Config().TunMTU()), "")
 	// Add API endpoint to stack.
 	tErr = ns.stack.CreateNIC(ns.nicID, ns.stackIO)
 	if tErr != nil {
