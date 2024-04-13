@@ -2,9 +2,12 @@
 set -euo pipefail
 
 # Get version.
-VERSION="$(git tag --points-at)"
-test -z "$VERSION" && VERSION="$(git describe --tags --abbrev=0)§dev§build" || git diff --quiet || VERSION="${VERSION}§dev§build"
-LDFLAGS="-X main.Version=${VERSION}"
+VERSION="$(git tag --points-at)"; test -z "$VERSION" && VERSION="$(git describe --tags --abbrev=0)_dev_build"; test -z "$VERSION" && VERSION="dev_build"
+BUILD_SOURCE=$( ( git remote -v | cut -f2 | cut -d" " -f1 | head -n 1 ) || echo "unknown" )
+BUILD_TIME=$(date -u "+%Y-%m-%dT%H:%M:%SZ" || echo "unknown")
+
+LDFLAGS="-X main.Version=${VERSION} -X main.BuildSource=${BUILD_SOURCE} -X main.BuildTime=${BUILD_TIME}"
 
 # Build.
-go build -ldflags "$LDFLAGS"
+export CGO_ENABLED=0
+go build -ldflags "$LDFLAGS" "$@"
