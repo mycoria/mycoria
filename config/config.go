@@ -32,8 +32,7 @@ type Config struct {
 
 	inPolicy map[string]map[netip.Addr]struct{}
 
-	tunMTU    atomic.Int32
-	frameSize atomic.Int32
+	tunMTU atomic.Int32
 
 	devMode atomic.Bool
 	started time.Time
@@ -96,12 +95,14 @@ func (s Store) parse(test bool) (*Config, error) { //nolint:maintidx // Function
 		started:  time.Now(),
 	}
 	c.SetTunMTU(DefaultTunMTU)
-	c.SetOverlayFrameSize(DefaultFrameSize)
 
 	// Basic field checks.
 	if c.System.TunName != "" &&
 		!tunNameRegex.MatchString(c.System.TunName) {
 		return nil, fmt.Errorf("system.tunName %q is invalid - it may only contain A-z and 0-9", c.System.TunName)
+	}
+	if c.System.TunMTU != 0 {
+		c.SetTunMTU(c.System.TunMTU)
 	}
 	if !test && c.System.StatePath != "" && !filepath.IsAbs(c.System.StatePath) {
 		return nil, fmt.Errorf("system.statePath must be an absolute path")

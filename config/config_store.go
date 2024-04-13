@@ -81,9 +81,11 @@ type ServiceConfig struct { //nolint:maligned
 // System defines all configuration regarding the system.
 type System struct { //nolint:maligned
 	TunName    string `json:"tunName,omitempty"    yaml:"tunName,omitempty"`
+	TunMTU     int    `json:"tunMTU,omitempty"     yaml:"tunMTU,omitempty"`
 	DisableTun bool   `json:"disableTun,omitempty" yaml:"disableTun,omitempty"`
-	APIListen  string `json:"apiListen,omitempty"  yaml:"apiListen,omitempty"`
-	StatePath  string `json:"statePath,omitempty"  yaml:"statePath,omitempty"`
+
+	APIListen string `json:"apiListen,omitempty" yaml:"apiListen,omitempty"`
+	StatePath string `json:"statePath,omitempty" yaml:"statePath,omitempty"`
 
 	DisableChromiumWorkaround bool `json:"disableChromiumWorkaround,omitempty" yaml:"disableChromiumWorkaround,omitempty"`
 }
