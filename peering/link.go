@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/frame"
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/mgr"
@@ -93,8 +92,6 @@ type LinkBase struct { //nolint:maligned
 	conn net.Conn
 	// encSession is the encryption session.
 	encSession *state.EncryptionSession
-	// frameSize is the expected maximum frame size for the link.
-	frameSize int
 
 	// sendQueuePrio is the send queue for priority messages.
 	sendQueuePrio chan frame.Frame
@@ -159,7 +156,6 @@ func newLinkBase(
 		started:       time.Now(),
 		peering:       peering,
 	}
-	link.frameSize = config.CalculateExpectedFrameSize(link.RemoteAddr())
 	link.latency = link.getFallbackLatency()
 
 	return link
@@ -478,10 +474,8 @@ func (link *LinkBase) writer(w *mgr.WorkerCtx) error {
 }
 
 func (link *LinkBase) readFrame(b *frame.Builder) (frame.Frame, error) {
-	pooledSlice := b.GetPooledSlice(link.frameSize)
-	data, err := link.readLengthAndData(pooledSlice)
+	data, err := link.readLengthAndData()
 	if err != nil {
-		b.ReturnPooledSlice(pooledSlice)
 		return nil, fmt.Errorf("read frame: %w", err)
 	}
 	link.bytesIn.Add(uint64(len(data)))
@@ -494,7 +488,7 @@ func (link *LinkBase) readFrame(b *frame.Builder) (frame.Frame, error) {
 			return nil, fmt.Errorf("unseal link frame: %w", err)
 		}
 		// Parse Frame.
-		f, err := b.ParseFrame(lf.LinkData(), pooledSlice, FrameOffset)
+		f, err := b.ParseFrame(lf.LinkData(), data[:cap(data)], FrameOffset)
 		if err != nil {
 			return nil, fmt.Errorf("parse frame (from link frame): %w", err)
 		}
@@ -503,7 +497,7 @@ func (link *LinkBase) readFrame(b *frame.Builder) (frame.Frame, error) {
 	}
 
 	// Parse Frame directly.
-	f, err := b.ParseFrame(data[2:], pooledSlice, 2)
+	f, err := b.ParseFrame(data[2:], data[:cap(data)], 2)
 	if err != nil {
 		return nil, fmt.Errorf("parse frame: %w", err)
 	}
@@ -546,28 +540,32 @@ func (link *LinkBase) writeFrame(f frame.Frame) error {
 	return nil
 }
 
-func (link *LinkBase) readLengthAndData(to []byte) ([]byte, error) {
+func (link *LinkBase) readLengthAndData() ([]byte, error) {
 	var read int
+	var lengthBytes [2]byte
 
 	// Read length.
 	for read < 2 {
-		n, err := link.conn.Read(to[read:2])
+		n, err := link.conn.Read(lengthBytes[read:])
 		if err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrNetworkReadError, err)
 		}
 		read += n
 	}
-	dataLen := int(m.GetUint16(to[:2]))
+	dataLen := int(m.GetUint16(lengthBytes[:]))
 	if dataLen <= 3 {
 		return nil, fmt.Errorf("invalid data length of %d", dataLen)
 	}
 
-	// Check data length.
-	if dataLen > len(to) {
+	// Get pooled slice and check size.
+	pooledSlice := link.peering.instance.FrameBuilder().GetPooledSlice(dataLen)
+	if len(pooledSlice) < dataLen {
 		// Data length is longer than byte slice.
 		// Read and discard data, so we can continue with next packet.
+		link.peering.mgr.Warn("pooled slice (%d) too small for data (%d)", len(pooledSlice), dataLen)
+
 		for read < dataLen {
-			n, err := link.conn.Read(to[:min(len(to), dataLen-read)])
+			n, err := link.conn.Read(pooledSlice[:min(len(pooledSlice), dataLen-read)])
 			if err != nil {
 				return nil, fmt.Errorf("%w: %w", ErrNetworkReadError, err)
 			}
@@ -576,16 +574,19 @@ func (link *LinkBase) readLengthAndData(to []byte) ([]byte, error) {
 		return nil, errors.New("frame too big for slice")
 	}
 
+	// Copy length bytes.
+	copy(pooledSlice, lengthBytes[:])
+
 	// Read data.
 	for read < dataLen {
-		n, err := link.conn.Read(to[read:dataLen])
+		n, err := link.conn.Read(pooledSlice[read:dataLen])
 		if err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrNetworkReadError, err)
 		}
 		read += n
 	}
 
-	return to[:dataLen], nil
+	return pooledSlice[:dataLen], nil
 }
 
 func (link *LinkBase) writeData(data []byte) error {
