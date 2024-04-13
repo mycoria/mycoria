@@ -4,10 +4,14 @@ set -euo pipefail
 # Build for supported platforms.
 echo "=> Building..."
 
-# Get version.
-VERSION="$(git tag --points-at)"
-test -z "$VERSION" && VERSION="$(git describe --tags --abbrev=0)§dev§build" || git diff --quiet || VERSION="${VERSION}§dev§build"
-LDFLAGS="-X main.Version=${VERSION}"
+# Get version metadata.
+VERSION="$(git tag --points-at)"; test -z "$VERSION" && VERSION="$(git describe --tags --abbrev=0)_dev_build"; test -z "$VERSION" && VERSION="dev_build"
+BUILD_SOURCE=$( ( git remote -v | cut -f2 | cut -d" " -f1 | head -n 1 ) || echo "unknown" )
+BUILD_TIME=$(date -u "+%Y-%m-%dT%H:%M:%SZ" || echo "unknown")
+LDFLAGS="-X main.Version=${VERSION} -X main.BuildSource=${BUILD_SOURCE} -X main.BuildTime=${BUILD_TIME}"
+
+# Set build options.
+export CGO_ENABLED=0
 
 GOOS=linux GOARCH=amd64 go build -C cmd/mycoria -ldflags "$LDFLAGS" -o dist/mycoria_linux_amd64
 GOOS=linux GOARCH=arm64 go build -C cmd/mycoria -ldflags "$LDFLAGS" -o dist/mycoria_linux_arm64
