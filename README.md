@@ -43,4 +43,4 @@ See [./packaging](./packaging).
 
 0. Install Go
 
-1. Run `go build` in `cmd/mycoria`
+1. Run `./build` in `cmd/mycoria`
