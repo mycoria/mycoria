@@ -115,9 +115,6 @@ func makeDefaultConfig(id *m.Address) config.Store {
 			URL:    "icmp6:",
 			Public: true,
 		}},
-		ResolveConfig: map[string]string{
-			"status.myco": "fd00::b909",
-		},
 	}
 }
 
