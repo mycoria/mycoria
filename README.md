@@ -1,43 +1,43 @@
 # Mycoria
 
-Mycoria gives you the connectivity freedom of the original Internet.
+Mycoria is an open and secure overlay network that connects all participants. It values freedom of connectivity and aims to imitate the curious and adventurous spirit of the early Internet:
 
-- Everyone is equal: Easily connect to anyone.
-- Everyone is welcome: Open network without bureaucracy.
-- No spooking: Everthing is authenticated.
-- No surveillance: Everything is encrypted.
-- No barriers: Connect via the Internet or extend Mycoria with your own mesh.
+- ==Everyone is equal==: Easily connect to anyone
+- ==Everyone is welcome==: Open network without bureaucracy
+- No spooking: Everthing is authenticated
+- No surveillance: Everything is encrypted (+ Private Addresses!)
+- No barriers: Connect via the Internet or extend Mycoria with your own mesh
 
-Design Goals
+### Design Goals
 
 - Keep it small and simple
 - Compatible with existing infrastructure (eg. DNS)
-- Secure by default
+- ==Secure by default==
 - Private by default (WIP)
 
-Main Features
+### Features
 
-- Automatic end-to-end encryption
+- ==Automatic end-to-end encryption==
 - Modern cryptography
-- Smart and scalable routing (partly WIP)
+- Smart and scalable routing
+- Dashboard ([Screenshots](https://mycoria.org/#dashboard-impressions))
 - Resolve .myco DNS (OS configuration required)
+- Simple Service Discovery
+- Auto-Optimization/Healing of Network (for Internet overlay) (WIP)
 - Rotating private addresses (WIP)
-- Dashboard (WIP)
-- Auto-Optimization/Healing of Network (for Internet overlay; WIP)
-- Simple Service Discovery (WIP)
 
 Read more on [mycoria.org](https://mycoria.org).
 
 ## Supported Platforms
 
-Currently only Linux amd64 is being tested. Linux arm64 should work as well.
-Windows will follow soon.
+- Linux (amd64, arm64)
+- Windows (amd64, arm64)
 
-We are also looking into supporting smaller devices in order to bring this to the IoT world.
+See [Quick Start](https://mycoria.org/quick-start/).
 
-## Packaging and Deployment
+## Install
 
-See [./packaging](./packaging).
+See [Install Guide](https://mycoria.org/install/).
 
 ## Building
 
