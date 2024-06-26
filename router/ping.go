@@ -336,7 +336,7 @@ func parsePingHeader(f frame.Frame) (hdr *PingHeader, dataOffset int, err error)
 
 	// Check ping type format.
 	if !pingTypeRegex.MatchString(hdr.PingType) {
-		return nil, 0, fmt.Errorf("invalid ping type")
+		return nil, 0, errors.New("invalid ping type")
 	}
 
 	return hdr, hdrLen + 2, nil

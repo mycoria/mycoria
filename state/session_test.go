@@ -9,6 +9,7 @@ import (
 
 	"golang.org/x/crypto/chacha20poly1305"
 
+	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/m"
 )
 
@@ -184,6 +185,7 @@ func getTestSessions(t *testing.T) (s1, s2 *Session) {
 
 	generateTestSessions.Do(func() {
 		ctx := context.Background()
+		config := &config.Config{}
 
 		a1, _, err := m.GeneratePrivacyAddress(ctx)
 		if err != nil {
@@ -193,7 +195,10 @@ func getTestSessions(t *testing.T) (s1, s2 *Session) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		state := New(nil, nil)
+		state := New(&instanceStub{
+			IdentityStub: a1,
+			ConfigStub:   config,
+		}, nil)
 		err = state.AddRouter(&a1.PublicAddress)
 		if err != nil {
 			t.Fatal(err)
@@ -217,4 +222,20 @@ func getTestSessions(t *testing.T) (s1, s2 *Session) {
 	})
 
 	return generatedS1, generatedS2
+}
+
+// instanceStub is a stub to easily create an inst.Ance.
+type instanceStub struct {
+	IdentityStub *m.Address
+	ConfigStub   *config.Config
+}
+
+// Identity returns the identity.
+func (stub *instanceStub) Identity() *m.Address {
+	return stub.IdentityStub
+}
+
+// Config returns the config.
+func (stub *instanceStub) Config() *config.Config {
+	return stub.ConfigStub
 }

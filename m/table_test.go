@@ -16,7 +16,7 @@ var (
 	myIP     = makeRandomAddress(myPrefix)
 )
 
-func TestTable(t *testing.T) {
+func TestTable(t *testing.T) { //nolint:maintidx
 	t.Parallel()
 
 	// Make routable prefixes for testing.

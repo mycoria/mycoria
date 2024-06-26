@@ -1,6 +1,7 @@
 package router
 
 import (
+	"errors"
 	"fmt"
 	"net/netip"
 	"sync"
@@ -226,16 +227,16 @@ func (h *HelloPingHandler) handlePingHelloResponse(w *mgr.WorkerCtx, f frame.Fra
 	// Get ping state.
 	pingState := h.getActive(f.SrcIP())
 	if pingState == nil {
-		return fmt.Errorf("no state")
+		return errors.New("no state")
 	}
 	// Check ping ID.
 	if pingState.pingID != hdr.PingID {
-		return fmt.Errorf("ping ID mismatch")
+		return errors.New("ping ID mismatch")
 	}
 
 	// Check if the already received a response for this ID.
 	if !pingState.done.CompareAndSwap(false, true) {
-		return fmt.Errorf("hello response already processed")
+		return errors.New("hello response already processed")
 	}
 
 	// Finalize key exchange and set it.

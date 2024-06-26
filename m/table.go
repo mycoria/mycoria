@@ -238,7 +238,7 @@ func (rt *RoutingTable) AddRoute(entry RoutingTableEntry) (added bool, err error
 	return false, nil
 }
 
-func (rt *RoutingTable) addNewDestination(entry RoutingTableEntry, rp RoutablePrefix) (added bool, err error) {
+func (rt *RoutingTable) addNewDestination(entry RoutingTableEntry, rp RoutablePrefix) (added bool, err error) { //nolint:unparam // Makes usage easier.
 	// Gossip routes are limited per prefix, check the limit.
 	if entry.Source == RouteSourceGossip {
 		// Get prefix section.

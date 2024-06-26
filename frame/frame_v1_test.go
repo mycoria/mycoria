@@ -261,6 +261,7 @@ func getTestSessions(t *testing.T) (s1, s2 *state.Session) {
 
 	generateTestSessions.Do(func() {
 		ctx := context.Background()
+		config := &config.Config{}
 
 		a1, _, err := m.GeneratePrivacyAddress(ctx)
 		if err != nil {
@@ -272,6 +273,7 @@ func getTestSessions(t *testing.T) (s1, s2 *state.Session) {
 		}
 		state := state.New(&instanceStub{
 			IdentityStub: a1,
+			ConfigStub:   config,
 		}, nil)
 		err = state.AddRouter(&a1.PublicAddress)
 		if err != nil {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -54,7 +55,7 @@ func generate(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("country code from geoip is invalid (%q), please set as argument", geoMark)
 		}
 		if geoMark == "US" {
-			return fmt.Errorf("invalid country code: in case of the US, please specify the state as US-XX")
+			return errors.New("invalid country code: in case of the US, please specify the state as US-XX")
 		}
 		return fmt.Errorf("invalid country code %q: %w", geoMark, err)
 	}

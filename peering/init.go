@@ -167,7 +167,7 @@ func (state *peeringRequestState) handlePeeringRequest(in frame.Frame) (frame.Fr
 
 	// Check if we are connecting to self.
 	if in.SrcIP() == state.peering.instance.Identity().IP {
-		return nil, fmt.Errorf("received peering request from myself")
+		return nil, errors.New("received peering request from myself")
 	}
 
 	// Unmarshal request.

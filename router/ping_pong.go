@@ -1,6 +1,7 @@
 package router
 
 import (
+	"errors"
 	"fmt"
 	"net/netip"
 	"sync"
@@ -158,7 +159,7 @@ func (h *PingPongHandler) handleRequest(_ *mgr.WorkerCtx, f frame.Frame, hdr *Pi
 		return fmt.Errorf("unmarshal msg: %w", err)
 	}
 	if msg.Msg != "ping" {
-		return fmt.Errorf("invalid ping pong request")
+		return errors.New("invalid ping pong request")
 	}
 
 	// Create response and send it.
@@ -193,7 +194,7 @@ func (h *PingPongHandler) handleResponse(_ *mgr.WorkerCtx, _ frame.Frame, hdr *P
 	// Get ping state.
 	pingState := h.pluckActive(hdr.PingID)
 	if pingState == nil {
-		return fmt.Errorf("no state")
+		return errors.New("no state")
 	}
 
 	// Parse and check response.
@@ -202,7 +203,7 @@ func (h *PingPongHandler) handleResponse(_ *mgr.WorkerCtx, _ frame.Frame, hdr *P
 		return fmt.Errorf("unmarshal response: %w", err)
 	}
 	if response.Msg != "pong" {
-		return fmt.Errorf("invalid ping pong response")
+		return errors.New("invalid ping pong response")
 	}
 
 	// Notify waiters and set state again to block too quick requests.

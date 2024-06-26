@@ -31,7 +31,7 @@ func (r *Router) handleTun(w *mgr.WorkerCtx) error {
 
 var multicastPrefix = netip.MustParsePrefix("ff00::/12")
 
-func (r *Router) handleTunPacket(w *mgr.WorkerCtx, packetData []byte) {
+func (r *Router) handleTunPacket(w *mgr.WorkerCtx, packetData []byte) { //nolint:maintidx
 	routerIP := r.instance.Identity().IP
 
 	// Check if packet is empty.

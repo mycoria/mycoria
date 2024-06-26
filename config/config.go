@@ -83,7 +83,7 @@ func (s Store) Parse() (*Config, error) {
 func MakeTestConfig(s Store) *Config {
 	c, err := s.parse(true)
 	if err != nil {
-		panic(fmt.Sprintf("test config invalid: %s", err.Error()))
+		panic("test config invalid: " + err.Error())
 	}
 	return c
 }
@@ -105,13 +105,13 @@ func (s Store) parse(test bool) (*Config, error) { //nolint:maintidx // Function
 		c.SetTunMTU(c.System.TunMTU)
 	}
 	if !test && c.System.StatePath != "" && !filepath.IsAbs(c.System.StatePath) {
-		return nil, fmt.Errorf("system.statePath must be an absolute path")
+		return nil, errors.New("system.statePath must be an absolute path")
 	}
 	if c.System.APIListen != "" {
 		var err error
 		c.APIListen, err = netip.ParseAddrPort(c.System.APIListen)
 		if err != nil {
-			return nil, fmt.Errorf("system.apiListen ist not a valid IP and port")
+			return nil, errors.New("system.apiListen ist not a valid IP and port")
 		}
 	}
 
@@ -314,7 +314,7 @@ func (c *Config) addInPolicyKey(policyKey string, public bool, friends bool, for
 
 	// Check parameters.
 	if public && (friends || len(forIPs) > 0) {
-		return fmt.Errorf(`public policy may not also define friends or "for"`)
+		return errors.New(`public policy may not also define friends or "for"`)
 	}
 
 	// Add public policy.
@@ -409,7 +409,7 @@ func getInfoFromURL(svcURL string) (policyKeys []string, domain string, err erro
 
 	// Check if port is set.
 	if port < 0 {
-		return nil, "", fmt.Errorf("port required, but not specified")
+		return nil, "", errors.New("port required, but not specified")
 	}
 
 	policyKeys = make([]string, 0, len(protocols))
