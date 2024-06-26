@@ -112,11 +112,6 @@ func (p *Peering) checkConnect(w *mgr.WorkerCtx, connected map[string]netip.Addr
 					break
 				}
 
-				// Skip if router does not have any public addresses or listeners.
-				if near.PublicInfo == nil || len(near.PublicInfo.IANA) == 0 || len(near.PublicInfo.Listeners) == 0 {
-					continue connectToNearest
-				}
-
 				// Check if we are already connected.
 				if p.GetLink(near.Address.IP) != nil {
 					// Aleady connected!

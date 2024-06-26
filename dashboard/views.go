@@ -112,6 +112,7 @@ func (d *Dashboard) discoverPage(w http.ResponseWriter, r *http.Request) {
 		func(a *storage.StoredRouter) bool {
 			return a.PublicInfo != nil &&
 				len(a.PublicInfo.PublicServices) > 0 &&
+				a.Universe == d.instance.Config().Router.Universe &&
 				a.UpdatedAt.After(newerThan)
 		},
 		func(a, b *storage.StoredRouter) int {

@@ -12,6 +12,9 @@ type StoredRouter struct {
 	Address    *m.PublicAddress `json:"address,omitempty"    yaml:"address,omitempty"`
 	PublicInfo *m.RouterInfo    `json:"publicInfo,omitempty" yaml:"publicInfo,omitempty"`
 
+	// Universe is the universe the router was observed in.
+	Universe string `json:"universe,omitempty" yaml:"universe,omitempty"`
+
 	// Offline signifies that the router has announced it is going offline.
 	Offline bool `json:"offline,omitempty" yaml:"offline,omitempty"`
 

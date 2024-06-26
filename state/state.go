@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/mgr"
 	"github.com/mycoria/mycoria/storage"
@@ -28,6 +29,7 @@ type State struct {
 // instance is an interface subset of inst.Ance.
 type instance interface {
 	Identity() *m.Address
+	Config() *config.Config
 }
 
 const minStorageSize = 10_000
@@ -86,6 +88,7 @@ func (state *State) AddRouter(address *m.PublicAddress) error {
 	// Otherwise, create a now stored info.
 	err = state.storage.SaveRouter(&storage.StoredRouter{
 		Address:   address,
+		Universe:  state.instance.Config().Router.Universe,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	})
@@ -114,7 +117,8 @@ func (state *State) QueryNearestRouters(ip netip.Addr, max int) ([]*storage.Stor
 			return !a.Offline &&
 				a.PublicInfo != nil &&
 				len(a.PublicInfo.IANA) > 0 &&
-				len(a.PublicInfo.Listeners) > 0
+				len(a.PublicInfo.Listeners) > 0 &&
+				a.Universe == state.instance.Config().Router.Universe
 		},
 		func(a, b *storage.StoredRouter) int {
 			aDist := m.IPDistance(ip, a.Address.IP)
@@ -144,6 +148,7 @@ func (state *State) AddPublicRouterInfo(id netip.Addr, info *m.RouterInfo) error
 
 	// Add to storage and save.
 	stored.PublicInfo = info
+	stored.Universe = state.instance.Config().Router.Universe
 	stored.UpdatedAt = time.Now()
 	stored.Offline = false
 	err = state.storage.SaveRouter(stored)
