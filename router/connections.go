@@ -22,9 +22,10 @@ type connStateEntry struct {
 	firstSeen int64
 	lastSeen  atomic.Int64
 
-	inbound bool
-	status  atomic.Uint32
-	notify  chan connStatus
+	inbound    bool
+	shortLived bool
+	status     atomic.Uint32
+	notify     chan connStatus
 
 	dataIn  atomic.Uint64
 	dataOut atomic.Uint64
@@ -73,10 +74,21 @@ func (r *Router) checkPolicy(w *mgr.WorkerCtx, inbound bool, connKey connStateKe
 	}
 
 	// If not, set up state record.
+
+	// Check if the protocol is short-lived.
+	var shortLived bool
+	switch connKey.protocol {
+	case 1: // ICMP
+		shortLived = true
+	case 58: // ICMPv6
+		shortLived = true
+	}
+	// Create state entry.
 	connState = &connStateEntry{
-		inbound:   inbound,
-		firstSeen: time.Now().Unix(),
-		notify:    make(chan connStatus),
+		inbound:    inbound,
+		shortLived: shortLived,
+		firstSeen:  time.Now().Unix(),
+		notify:     make(chan connStatus),
 	}
 	// Update last seen.
 	connState.lastSeen.Store(time.Now().Unix())

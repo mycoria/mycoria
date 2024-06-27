@@ -103,7 +103,7 @@ func (r *Router) handleIncomingTraffic(w *mgr.WorkerCtx, f frame.Frame) error {
 }
 
 func (r *Router) cleanConnStatesWorker(w *mgr.WorkerCtx) error {
-	ticker := time.NewTicker(1 * time.Minute)
+	ticker := time.NewTicker(10 * time.Second)
 	for {
 		select {
 		case <-w.Done():
@@ -116,13 +116,21 @@ func (r *Router) cleanConnStatesWorker(w *mgr.WorkerCtx) error {
 
 func (r *Router) cleanConnStates() {
 	removeThreshold := time.Now().Add(-10 * time.Minute).Unix()
+	shortRemoveThreshold := time.Now().Add(-10 * time.Second).Unix()
 
 	r.connStatesLock.Lock()
 	defer r.connStatesLock.Unlock()
 
 	for key, entry := range r.connStates {
-		if entry.lastSeen.Load() < removeThreshold {
-			delete(r.connStates, key)
+		switch {
+		case entry.shortLived:
+			if entry.lastSeen.Load() < shortRemoveThreshold {
+				delete(r.connStates, key)
+			}
+		default:
+			if entry.lastSeen.Load() < removeThreshold {
+				delete(r.connStates, key)
+			}
 		}
 	}
 }
