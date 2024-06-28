@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/miekg/dns"
@@ -25,6 +26,7 @@ type Server struct {
 
 	dnsServer     *dns.Server
 	dnsServerBind net.PacketConn
+	replyLock     sync.Mutex
 
 	apiNames       []string
 	forbiddenNames []string
@@ -117,7 +119,7 @@ func (srv *Server) handleRequest(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dn
 	// Check TLD.
 	if !strings.HasSuffix(queryName, config.DefaultTLDBetweenDots) {
 		// Ignore all queries outside of .myco
-		replyNotFound(wkr, w, r)
+		srv.replyNotFound(wkr, w, r)
 		return
 	}
 	// Domain names are internally handle without the trailing dot.
@@ -129,7 +131,7 @@ func (srv *Server) handleRequest(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dn
 		// Handle A, AAAA, SVCB, HTTPS and ANY.
 	default:
 		// Ignore other types.
-		replyNotFound(wkr, w, r)
+		srv.replyNotFound(wkr, w, r)
 		return
 	}
 
@@ -139,7 +141,7 @@ func (srv *Server) handleRequest(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dn
 		// Allow INET, ANY.
 	default:
 		// Ignore other classes.
-		replyNotFound(wkr, w, r)
+		srv.replyNotFound(wkr, w, r)
 		return
 	}
 
@@ -159,13 +161,13 @@ func (srv *Server) handleRequest(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dn
 	switch source {
 	case SourceInternal, SourceResolveConfig,
 		SourceFriend, SourceMapping:
-		reply(wkr, w, r, resolveToIP, source)
+		srv.reply(wkr, w, r, resolveToIP, source)
 
 	case SourceNone, SourceForbidden:
-		replyNotFound(wkr, w, r)
+		srv.replyNotFound(wkr, w, r)
 
 	default:
-		replyNotFound(wkr, w, r)
+		srv.replyNotFound(wkr, w, r)
 	}
 }
 
@@ -208,7 +210,7 @@ func (srv *Server) Lookup(domain string) (netip.Addr, Source) {
 	return netip.Addr{}, SourceNone
 }
 
-func reply(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dns.Msg, ip netip.Addr, source Source) {
+func (srv *Server) reply(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dns.Msg, ip netip.Addr, source Source) {
 	reply := new(dns.Msg)
 
 	// Create answers.
@@ -259,15 +261,34 @@ func reply(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dns.Msg, ip netip.Addr, 
 
 	// Finalize and reply.
 	reply.SetRcode(r, dns.RcodeSuccess)
-	replyMsg(wkr, w, reply)
+	srv.replyMsg(wkr, w, reply)
 }
 
-func replyNotFound(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dns.Msg) {
-	replyMsg(wkr, w, new(dns.Msg).SetRcode(r, dns.RcodeNameError))
+func (srv *Server) replyNotFound(wkr *mgr.WorkerCtx, w dns.ResponseWriter, r *dns.Msg) {
+	srv.replyMsg(wkr, w, new(dns.Msg).SetRcode(r, dns.RcodeNameError))
 }
 
-func replyMsg(wkr *mgr.WorkerCtx, w dns.ResponseWriter, reply *dns.Msg) {
-	err := w.WriteMsg(reply)
+func (srv *Server) replyMsg(wkr *mgr.WorkerCtx, w dns.ResponseWriter, reply *dns.Msg) {
+	// The gVisor netstack hangs at
+	//   tcpip/adapters/gonet.(*UDPConn).WriteTo+0x6b0
+	//   tcpip/adapters/gonet/gonet.go:680
+	// This breaks DNS resolution and leads to massive goroutine leak.
+	// This is an attempt to workaround this and stabilize responses.
+	// TODO: Evaluate other options
+	srv.replyLock.Lock()
+	defer srv.replyLock.Unlock()
+	err := srv.dnsServer.PacketConn.SetWriteDeadline(time.Now().Add(10 * time.Millisecond))
+	if err != nil {
+		wkr.Error(
+			"failed to set write deadline for dns response",
+			"name", reply.Question[0].Name,
+			"rcode", reply.Rcode,
+			"err", err,
+		)
+		return
+	}
+
+	err = w.WriteMsg(reply)
 	if err != nil {
 		wkr.Error(
 			"failed to write dns response",
