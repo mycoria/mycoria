@@ -213,6 +213,26 @@ func (p *Peering) closeAllLinks() {
 	}
 }
 
+// IsStub returns whether the router is currently a dead end:
+// It only has 1 peer or only lite peers.
+func (p *Peering) IsStub() bool {
+	p.linksLock.RLock()
+	defer p.linksLock.RUnlock()
+
+	// Check if there is only one peer.
+	if len(p.links) <= 1 {
+		return true
+	}
+
+	// Check if there are only lite peers.
+	for _, link := range p.links {
+		if !link.Lite() {
+			return false
+		}
+	}
+	return true
+}
+
 // GetListener returns the listener with the given ID.
 func (p *Peering) GetListener(id string) Listener {
 	p.listenersLock.Lock()

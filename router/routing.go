@@ -42,7 +42,7 @@ func (r *Router) RouteFrame(f frame.Frame) error {
 	}
 
 	// Lookup routing table for best next hop.
-	rte, _ := r.table.LookupNearest(f.DstIP())
+	rte, _ := r.table.LookupNearestRoute(f.DstIP())
 	if rte == nil {
 		return ErrTableEmpty
 	}

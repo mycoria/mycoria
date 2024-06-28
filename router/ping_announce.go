@@ -50,7 +50,10 @@ func (h *AnnouncePingHandler) Clean(w *mgr.WorkerCtx) error {
 type AnnouncePingMsg struct {
 	Info        *m.RouterInfo `cbor:"i,omitempty" json:"i,omitempty"`
 	ReturnLabel m.SwitchLabel `cbor:"b,omitempty" json:"b,omitempty"`
-	Expires     time.Time     `cbor:"e,omitempty" json:"e,omitempty"`
+	// Stub signifies that the router is a dead end:
+	// It only has 1 peer or only lite peers.
+	Stub    bool      `cbor:"s,omitempty" json:"s,omitempty"`
+	Expires time.Time `cbor:"e,omitempty" json:"e,omitempty"`
 }
 
 // AnnouncePingAttachment is an announce ping attachment.
@@ -77,6 +80,7 @@ func (h *AnnouncePingHandler) Send(peer netip.Addr) error {
 	msg.Info.Version = h.r.instance.Version()
 	msg.ReturnLabel = link.SwitchLabel()
 	msg.Expires = time.Now().Add(announceInterval*2 + 10*time.Second)
+	msg.Stub = h.r.instance.Config().Router.Stub || h.r.instance.Peering().IsStub()
 	data, err := cbor.Marshal(&msg)
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
@@ -135,62 +139,66 @@ func (h *AnnouncePingHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingH
 		)
 	}
 
-	// If there are hops, add route to routing table.
+	// Add route to routing table.
+	switchPath := m.SwitchPath{
+		Hops: make([]m.SwitchHop, 0, len(hops)+2),
+	}
+	// Add own entry as first.
+	switchPath.Hops = append(switchPath.Hops, m.SwitchHop{
+		Router:       h.r.instance.Identity().IP,
+		Delay:        recvLink.Latency(),
+		ForwardLabel: recvLink.SwitchLabel(),
+		ReturnLabel:  0,
+	})
+	// Add stacked hops in reverse order.
+	for _, hop := range hops {
+		switchPath.Hops = append(switchPath.Hops, m.SwitchHop{
+			Router:       hop.Router,
+			Delay:        hop.Delay,
+			ForwardLabel: hop.ForwardLabel,
+			ReturnLabel:  hop.ReturnLabel,
+		})
+	}
+	// Add announcing router as last.
+	switchPath.Hops = append(switchPath.Hops, m.SwitchHop{
+		Router:       f.SrcIP(),
+		Delay:        0,
+		ForwardLabel: 0,
+		ReturnLabel:  msg.ReturnLabel,
+	})
+	switchPath.CalculateTotals()
+	// Create table entry.
+	rte := m.RoutingTableEntry{
+		DstIP:   f.SrcIP(),
+		NextHop: recvLink.Peer(),
+		Path:    switchPath,
+		Stub:    msg.Stub,
+		Source:  m.RouteSourcePeer,
+	}
 	if len(hops) > 0 {
-		switchPath := m.SwitchPath{
-			Hops: make([]m.SwitchHop, 0, len(hops)+2),
-		}
-		// Add own entry as first.
-		switchPath.Hops = append(switchPath.Hops, m.SwitchHop{
-			Router:       h.r.instance.Identity().IP,
-			Delay:        recvLink.Latency(),
-			ForwardLabel: recvLink.SwitchLabel(),
-			ReturnLabel:  0,
-		})
-		// Add stacked hops in reverse order.
-		for _, hop := range hops {
-			switchPath.Hops = append(switchPath.Hops, m.SwitchHop{
-				Router:       hop.Router,
-				Delay:        hop.Delay,
-				ForwardLabel: hop.ForwardLabel,
-				ReturnLabel:  hop.ReturnLabel,
-			})
-		}
-		// Add announcing router as last.
-		switchPath.Hops = append(switchPath.Hops, m.SwitchHop{
-			Router:       f.SrcIP(),
-			Delay:        0,
-			ForwardLabel: 0,
-			ReturnLabel:  msg.ReturnLabel,
-		})
-		switchPath.CalculateTotals()
-
-		added, err := h.r.table.AddRoute(m.RoutingTableEntry{
-			DstIP:   f.SrcIP(),
-			NextHop: recvLink.Peer(),
-			Path:    switchPath,
-			Source:  m.RouteSourceGossip,
-			Expires: msg.Expires,
-		})
-		switch {
-		case err != nil:
-			w.Warn(
-				"failed to add entry to routing table",
-				"dst", f.SrcIP(),
-				"err", err,
-			)
-		case added:
-			w.Info(
-				"updated routing entry",
-				"router", f.SrcIP(),
-				"nexthop", recvLink.Peer(),
-				"hops", switchPath.TotalHops,
-			)
-		default:
-			// Not added to routing table.
-			// Do not forward.
-			return nil
-		}
+		rte.Source = m.RouteSourceGossip
+		rte.Expires = msg.Expires
+	}
+	// Add to table.
+	added, err := h.r.table.AddRoute(rte)
+	switch {
+	case err != nil:
+		w.Warn(
+			"failed to add entry to routing table",
+			"dst", f.SrcIP(),
+			"err", err,
+		)
+	case added:
+		w.Info(
+			"updated routing entry",
+			"router", f.SrcIP(),
+			"nexthop", recvLink.Peer(),
+			"hops", switchPath.TotalHops,
+		)
+	default:
+		// Not added to routing table.
+		// Do not forward.
+		return nil
 	}
 
 	// Never forward if router is a stub.
@@ -205,7 +213,7 @@ func (h *AnnouncePingHandler) Handle(w *mgr.WorkerCtx, f frame.Frame, hdr *PingH
 		forwardTo = h.r.instance.Peering().GetLinks()
 	} else {
 		// Otherwise, only forward to best next hop.
-		rte, _ := h.r.table.LookupNearest(f.DstIP())
+		rte, _ := h.r.table.LookupNearestRoute(f.DstIP())
 		if rte == nil {
 			return errors.New("not routing: table empty")
 		}

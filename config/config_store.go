@@ -48,6 +48,9 @@ type Router struct { //nolint:maligned
 
 	// Stub runs the router in stub mode. It will not relay router announcements
 	// and will appear as a dead end to other routers.
+	// Forces the router to announce itself as a stub router.
+	// Hint: Routers with only one peer or only lite mode peers automatically
+	// announce themselves as stub routers.
 	Stub bool `json:"stub,omitempty" yaml:"stub,omitempty"`
 
 	// Lite runs the router in lite mode. It will attempt to reduce any

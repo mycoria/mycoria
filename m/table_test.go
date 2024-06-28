@@ -56,7 +56,7 @@ func TestTable(t *testing.T) { //nolint:maintidx
 
 	t.Logf("testing empty lookup...")
 	ip := makeRandomAddress(RoutingAddressPrefix)
-	entry, _ := tbl.LookupNearest(ip)
+	entry, _ := tbl.LookupNearestRoute(ip)
 	assert.Nil(t, entry, "lookup must not return an entry")
 
 	t.Logf("adding peer entries...")
@@ -67,6 +67,7 @@ func TestTable(t *testing.T) { //nolint:maintidx
 			DstIP:   ip,
 			NextHop: ip,
 			Path:    makeRandomSwitchPath(ip, 0, 0),
+			Stub:    i%5 == 0,
 			Source:  RouteSourcePeer,
 		})
 		assert.NoError(t, err, "adding peer entry should succeed")
@@ -131,6 +132,7 @@ func TestTable(t *testing.T) { //nolint:maintidx
 					DstIP:   ip,
 					NextHop: peers[j%len(peers)],
 					Path:    makeRandomSwitchPath(peers[j%len(peers)], j+2, j+2),
+					Stub:    i%5 == 0,
 					Source:  RouteSourceGossip,
 				}
 				_, err := tbl.AddRoute(rte)
@@ -159,7 +161,7 @@ func TestTable(t *testing.T) { //nolint:maintidx
 
 			if i < entriesPerPrefix/2 {
 				// Check lookup.
-				entry, isDestination := tbl.LookupNearest(ip)
+				entry, isDestination := tbl.LookupNearestRoute(ip)
 				assert.Equalf(t, ip.String(), entry.DstIP.String(), "gossip table lookup (%d) must match exactly", i)
 				assert.Truef(t, isDestination, "gossip table lookup (%d) must report dst match", i)
 				assert.Equalf(t, uint8(2), entry.Path.TotalHops, "gossip table lookup (%d) must return better route", i)
@@ -174,6 +176,7 @@ func TestTable(t *testing.T) { //nolint:maintidx
 			DstIP:   ip,
 			NextHop: peers[i%len(peers)],
 			Path:    makeRandomSwitchPath(peers[i%len(peers)], 2, 5),
+			Stub:    i%5 == 0,
 			Source:  RouteSourceDiscovered,
 			Expires: time.Now().Add(1 * time.Hour),
 		})
@@ -188,7 +191,7 @@ func TestTable(t *testing.T) { //nolint:maintidx
 	t.Logf("testing lookups...")
 	for range testLookups {
 		ip := makeRandomAddress(RoutingAddressPrefix)
-		entry, _ := tbl.LookupNearest(ip)
+		entry, _ := tbl.LookupNearestRoute(ip)
 		assert.NotNil(t, entry, "lookup must return an entry")
 	}
 
@@ -348,7 +351,7 @@ func BenchmarkTableLookup(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		entry, _ := tbl.LookupNearest(ips[i%1000])
+		entry, _ := tbl.LookupNearestRoute(ips[i%1000])
 		if entry == nil {
 			b.Fatal("lookup failed")
 		}

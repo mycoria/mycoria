@@ -55,6 +55,7 @@ type RoutingTableEntry struct {
 
 	NextHop netip.Addr
 	Path    SwitchPath
+	Stub    bool // Destination is a dead end (only 1 peer).
 
 	Source  RouteSource
 	Expires time.Time
@@ -166,21 +167,6 @@ func (rt *RoutingTable) AddRoute(entry RoutingTableEntry) (added bool, err error
 	rt.lock.Lock()
 	defer rt.lock.Unlock()
 
-	// Always add peers.
-	if entry.Source == RouteSourcePeer {
-		// Get insert index.
-		insertIndex, _ := slices.BinarySearchFunc[[]*RoutingTableEntry, *RoutingTableEntry, *RoutingTableEntry](
-			rt.entries,
-			&entry,
-			rt.stdSort,
-		)
-		// Insert
-		rt.entries = slices.Insert[[]*RoutingTableEntry, *RoutingTableEntry](
-			rt.entries, insertIndex, &entry,
-		)
-		return true, nil
-	}
-
 	// Get destination section.
 	start, end := rt.getDstSection(entry.DstIP)
 	if start >= end {
@@ -207,7 +193,7 @@ func (rt *RoutingTable) AddRoute(entry RoutingTableEntry) (added bool, err error
 	// We have a new route for a known destination.
 
 	// If we don't have 3 routes to this destination yet, add it.
-	if end-start < 3 {
+	if end-start < 3 || entry.Source == RouteSourcePeer {
 		// Get insert index.
 		insertIndex, _ := slices.BinarySearchFunc[[]*RoutingTableEntry, *RoutingTableEntry, *RoutingTableEntry](
 			rt.entries,
@@ -337,7 +323,36 @@ func (rt *RoutingTable) LookupNearest(dst netip.Addr) (rte *RoutingTableEntry, i
 	return rte, dstMatched
 }
 
-// LookupPossiblePaths looks the best possible entires for the given destination.
+// LookupNearestRoute returns the best route for the given destination.
+func (rt *RoutingTable) LookupNearestRoute(dst netip.Addr) (rte *RoutingTableEntry, isDestination bool) {
+	rt.lock.RLock()
+	defer rt.lock.RUnlock()
+
+	// Find nearest router.
+	index, dstMatched := rt.findIndex(dst)
+	if index < 0 {
+		return nil, false
+	}
+	// Return immediately if matched directly or not a stub router.
+	if dstMatched || !rt.entries[index].Stub {
+		return rt.entries[index], dstMatched
+	}
+
+	// We don't have a route to the destination.
+	// And the nearest router we found is a stub.
+	// Go looking for nearby routers that are not stubs.
+	var nearestNonStub *RoutingTableEntry
+	rt.iterateNearest(dst, index, func(rte *RoutingTableEntry, distance AddrDistance) (done bool) {
+		if !rte.Stub {
+			nearestNonStub = rte
+			return true
+		}
+		return false
+	})
+	return nearestNonStub, false
+}
+
+// LookupPossiblePaths looks the best possible entries for the given destination.
 func (rt *RoutingTable) LookupPossiblePaths(dst netip.Addr, maxMatches int, maxDistance AddrDistance, distinctNextHop bool, avoid []netip.Addr) []*RoutingTableEntry {
 	rt.lock.RLock()
 	defer rt.lock.RUnlock()
@@ -348,85 +363,80 @@ func (rt *RoutingTable) LookupPossiblePaths(dst netip.Addr, maxMatches int, maxD
 		return nil
 	}
 
-	var (
-		possibleNextHops = make([]*RoutingTableEntry, 0, maxMatches)
-		done             bool
+	// Iterate over nearest destinations and add possible paths.
+	possibleNextHops := make([]*RoutingTableEntry, 0, maxMatches)
+	rt.iterateNearest(dst, index, func(rte *RoutingTableEntry, distance AddrDistance) (done bool) {
+		// Check if we have reached max distance.
+		if !maxDistance.IsZero() && maxDistance.Less(distance) {
+			return true
+		}
+		// Add to possible paths.
+		possibleNextHops, done = addToPossiblePaths(possibleNextHops, rte, maxMatches, distinctNextHop, avoid)
+		return done
+	})
+	return possibleNextHops
+}
 
-		nextNextIndex = index + 1
+func (rt *RoutingTable) iterateNearest(dst netip.Addr, startIndex int, fn func(rte *RoutingTableEntry, distance AddrDistance) (done bool)) {
+	var (
+		nextNextIndex = startIndex + 1
 		nextEntry     *RoutingTableEntry
 		nextDistance  AddrDistance
 
-		prevNextIndex = index - 1
+		prevNextIndex = startIndex - 1
 		prevEntry     *RoutingTableEntry
 		prevDistance  AddrDistance
 	)
-	// Add matched entry.
-	possibleNextHops, done = addToPossiblePaths(possibleNextHops, rt.entries[index], maxMatches, distinctNextHop, avoid)
-	if done {
-		return possibleNextHops
-	}
-	// Search for more entries.
 	for {
-		// Get Distances.
+		// Get next entries and distances.
 		if nextEntry == nil && nextNextIndex < len(rt.entries) {
 			nextEntry = rt.entries[nextNextIndex]
 			nextDistance = IPDistance(nextEntry.DstIP, dst)
-
-			if maxDistance.IsZero() || nextDistance.Less(maxDistance) {
-				nextNextIndex++
-			} else {
-				// Reached max on next, stop processing next entries.
-				nextNextIndex = len(rt.entries)
-				nextEntry = nil
-				nextDistance = AddrDistance{}
-			}
+			nextNextIndex++
 		}
 		if prevEntry == nil && prevNextIndex >= 0 {
 			prevEntry = rt.entries[prevNextIndex]
 			prevDistance = IPDistance(prevEntry.DstIP, dst)
-
-			if maxDistance.IsZero() || prevDistance.Less(maxDistance) {
-				prevNextIndex--
-			} else {
-				// Reached max on previous, stop processing previous entries.
-				prevNextIndex = len(rt.entries)
-				prevEntry = nil
-				prevDistance = AddrDistance{}
-			}
+			prevNextIndex--
 		}
 
-		// Check what we have and add best entry to list.
+		// Check what we have and call function on next nearest entry.
 		switch {
 		case prevEntry == nil && nextEntry == nil:
-			// No new data, return what we have.
-			return possibleNextHops
+			// No new data, end search.
+			return
 
 		case nextEntry == nil:
-			// Next reached limit, add prev.
-			possibleNextHops, done = addToPossiblePaths(possibleNextHops, prevEntry, maxMatches, distinctNextHop, avoid)
+			// Next reached limit, process prev.
+			if fn(prevEntry, prevDistance) {
+				return
+			}
 			prevEntry = nil
 			prevDistance = AddrDistance{}
 
 		case prevEntry == nil:
-			// Prev reached limit, add next.
-			possibleNextHops, done = addToPossiblePaths(possibleNextHops, nextEntry, maxMatches, distinctNextHop, avoid)
+			// Prev reached limit, process next.
+			if fn(nextEntry, nextDistance) {
+				return
+			}
 			nextEntry = nil
 			nextDistance = AddrDistance{}
 
 		default:
 			// Add better entry, use prev in a draw.
 			if prevDistance.Compare(nextDistance) <= 0 {
-				possibleNextHops, done = addToPossiblePaths(possibleNextHops, prevEntry, maxMatches, distinctNextHop, avoid)
+				if fn(prevEntry, prevDistance) {
+					return
+				}
 				prevEntry = nil
 				prevDistance = AddrDistance{}
 			} else {
-				possibleNextHops, done = addToPossiblePaths(possibleNextHops, nextEntry, maxMatches, distinctNextHop, avoid)
+				if fn(nextEntry, nextDistance) {
+					return
+				}
 				nextEntry = nil
 				nextDistance = AddrDistance{}
 			}
-		}
-		if done {
-			return possibleNextHops
 		}
 	}
 }
@@ -731,6 +741,8 @@ func (a *RoutingTableEntry) RouteEquals(b *RoutingTableEntry) bool {
 	switch {
 	case a.DstIP != b.DstIP:
 		return false
+	case a.Source == RouteSourcePeer && b.Source == RouteSourcePeer:
+		return true
 	case a.Path.TotalHops != b.Path.TotalHops:
 		return false
 	case len(a.Path.Hops) != len(b.Path.Hops):
@@ -774,15 +786,19 @@ func (rt *RoutingTable) Format() string {
 		if cml, _ := LookupCountryMarker(rte.DstIP); cml != nil {
 			cc = cml.Country
 		}
+		stub := ""
+		if rte.Stub {
+			stub = " stub"
+		}
 
 		switch {
 		case rte.Source == RouteSourcePeer:
-			fmt.Fprintf(b, "  %d: %s   %s cc=%s hops=%d\n", i+1,
-				rte.Source, rte.DstIP.StringExpanded(), cc, rte.Path.TotalHops,
+			fmt.Fprintf(b, "  %d: %s   %s cc=%s hops=%d lat=%dms%s\n", i+1,
+				rte.Source, rte.DstIP.StringExpanded(), cc, rte.Path.TotalHops, rte.Path.TotalDelay, stub,
 			)
 		default:
 			fmt.Fprintf(b,
-				"  %d: %s %s cc=%s hops=%d lat=%dms next=%x via=%s\n", i+1,
+				"  %d: %s %s cc=%s hops=%d lat=%dms next=%x via=%s%s\n", i+1,
 				rte.Source,
 				rte.DstIP.StringExpanded(),
 				cc,
@@ -790,6 +806,7 @@ func (rt *RoutingTable) Format() string {
 				rte.Path.TotalDelay,
 				rte.Path.Hops[0].ForwardLabel,
 				formatRelays(rte.Path.Hops),
+				stub,
 			)
 		}
 	}
