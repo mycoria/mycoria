@@ -180,8 +180,9 @@ func (ns *NetStack) handleResponsePackets(w *mgr.WorkerCtx) error {
 		// DEBUG:
 		// fmt.Printf("out:\n%s", hex.Dump(pktWithOffset[offset:]))
 
-		// TODO: Should we trigger a resource release here?
-		// pktBuf.DecRef()
+		// Trigger resource release.
+		// This will (seemingly) also removed the packet from the queue it was in.
+		pktBuf.DecRef()
 
 		// Write packet data to tun device.
 		select {

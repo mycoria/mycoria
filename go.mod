@@ -11,7 +11,7 @@ go 1.22.0
 // - go mod tidy # transforms the require into a valid version string
 // Option 3: Forced, but might break IDE
 // - replace gvisor.dev/gvisor => gvisor.dev/gvisor go
-require gvisor.dev/gvisor v0.0.0-20240626174140-867c77f165fd
+require gvisor.dev/gvisor v0.0.0-20240628004447-03c52c5252a6
 
 require (
 	github.com/brianvoe/gofakeit v3.18.0+incompatible
