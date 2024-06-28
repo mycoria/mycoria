@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -eo pipefail
 
 # Get version.
 VERSION="$(git tag --points-at)" || true
