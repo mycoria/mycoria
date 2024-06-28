@@ -58,6 +58,7 @@ jobs:
           export CGO_ENABLED=0
           GOOS=linux GOARCH=amd64 go build -C cmd/mycoria -ldflags "$LDFLAGS" -o dist/mycoria_linux_amd64
           GOOS=linux GOARCH=arm64 go build -C cmd/mycoria -ldflags "$LDFLAGS" -o dist/mycoria_linux_arm64
+          GOOS=linux GOARCH=arm GOARM=7 go build -C cmd/mycoria -ldflags "$LDFLAGS" -o dist/mycoria_linux_armv7
           GOOS=windows GOARCH=amd64 go build -C cmd/mycoria -ldflags "$LDFLAGS" -o dist/mycoria_windows_amd64.exe
           GOOS=windows GOARCH=arm64 go build -C cmd/mycoria -ldflags "$LDFLAGS" -o dist/mycoria_windows_arm64.exe
           cmd/mycoria/dist/mycoria_linux_amd64 version
@@ -72,5 +73,6 @@ jobs:
           files: |
             cmd/mycoria/dist/mycoria_linux_amd64
             cmd/mycoria/dist/mycoria_linux_arm64
+            cmd/mycoria/dist/mycoria_linux_armv7
             cmd/mycoria/dist/mycoria_windows_amd64.exe
             cmd/mycoria/dist/mycoria_windows_arm64.exe
