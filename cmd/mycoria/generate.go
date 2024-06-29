@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
@@ -23,7 +24,8 @@ func init() {
 }
 
 var generateCmd = &cobra.Command{
-	Use:  "generate",
+	Use:  "generate [2-letter country code; US needs state: US-DC; omit to ask reallyfreegeoip.org]",
+	Long: "Generate a new identity and configuration. If your (2-letter) country code cannot be automatically detected using reallyfreegeoip.org, you will need to provide it yourself as the first argument. For the US, you also need to provide your state like US-DC.",
 	RunE: generate,
 }
 
@@ -55,7 +57,7 @@ func generate(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("country code from geoip is invalid (%q), please set as argument", geoMark)
 		}
 		if geoMark == "US" {
-			return errors.New("invalid country code: in case of the US, please specify the state as US-XX")
+			return errors.New("invalid country code: in case of the US, please specify the state like US-DC")
 		}
 		return fmt.Errorf("invalid country code %q: %w", geoMark, err)
 	}
@@ -124,6 +126,8 @@ type reallyFreeGeoIPResponse struct {
 	RegionCode  string `json:"region_code"`
 }
 
+var usRegionCodeRegex = regexp.MustCompile("^[A-Z]{2}$")
+
 func getGeoMarkFromGeoIP() (string, error) {
 	// Get geoip data.
 	resp, err := http.Get("https://reallyfreegeoip.org/json/")
@@ -149,6 +153,9 @@ func getGeoMarkFromGeoIP() (string, error) {
 
 	// Return geo marking code.
 	if geoipResponse.CountryCode == "US" {
+		if geoipResponse.RegionCode == "" || !usRegionCodeRegex.MatchString(geoipResponse.RegionCode) {
+			return "", errors.New("geoip data does not specify US state")
+		}
 		return geoipResponse.CountryCode + "-" + geoipResponse.RegionCode, nil
 	}
 	return geoipResponse.CountryCode, nil

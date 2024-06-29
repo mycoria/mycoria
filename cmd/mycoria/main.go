@@ -18,8 +18,6 @@ var (
 )
 
 func main() {
-	pflag.Parse()
-
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
