@@ -96,7 +96,17 @@ func (p *Peering) checkConnect(w *mgr.WorkerCtx, connected map[string]netip.Addr
 	}
 
 	// Connect to the two nearest routers in the address space.
-	if p.instance.Config().Router.AutoConnect {
+	if p.instance.Config().Router.AutoConnect || p.instance.Config().Router.MinAutoConnect != 0 {
+		minConnect := p.instance.Config().Router.MinAutoConnect
+		switch {
+		case minConnect <= 0:
+			minConnect = 2
+		case minConnect < 1:
+			minConnect = 1
+		case minConnect > 25:
+			minConnect = 25
+		}
+
 		nearest, err := p.instance.State().QueryNearestRouters(p.instance.Identity().IP, 100)
 		if err != nil {
 			w.Warn(
@@ -105,10 +115,11 @@ func (p *Peering) checkConnect(w *mgr.WorkerCtx, connected map[string]netip.Addr
 			)
 		} else {
 			var connectedCnt int
+
 		connectToNearest:
 			for _, near := range nearest {
-				// Connect to the two nearest reachable routers.
-				if connectedCnt >= 2 {
+				// Connect to nearest reachable routers.
+				if connectedCnt >= minConnect {
 					break
 				}
 
