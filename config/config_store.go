@@ -47,7 +47,7 @@ type Router struct { //nolint:maligned
 	// should automatically connect to in order to improve network flow.
 	// Enables AutoConnect if defined.
 	// Minimum is 1, Defaults to 2.
-	MinAutoConnect int `json:"minConnect,omitempty" yaml:"minConnect,omitempty"`
+	MinAutoConnect int `json:"minAutoConnect,omitempty" yaml:"minAutoConnect,omitempty"`
 
 	// Bootstrap holds peering URLs that the router uses to bootstrap to the network.
 	Bootstrap []string `json:"bootstrap,omitempty" yaml:"bootstrap,omitempty"`
