@@ -25,8 +25,9 @@ type groupModule struct {
 
 // Module is an manage-able instance of some component.
 type Module interface {
-	Start(mgr *Manager) error
-	Stop(mgr *Manager) error
+	Manager() *Manager
+	Start() error
+	Stop() error
 }
 
 // NewGroup returns a new group of modules.
@@ -39,6 +40,8 @@ func NewGroup(modules ...Module) *Group {
 
 	// Initialize groups modules.
 	for _, m := range modules {
+		mgr := m.Manager()
+
 		// Skip non-values.
 		switch {
 		case m == nil:
@@ -48,12 +51,18 @@ func NewGroup(modules ...Module) *Group {
 			// If nil values are given via a struct, they are will be interfaces to a
 			// nil type. Ignore these too.
 			continue
+		case mgr == nil:
+			// Skip modules without manager.
+			continue
+		case mgr.name == "":
+			// Set fallback module name.
+			mgr.name = makeModuleName(m)
 		}
 
 		// Add module to group.
 		g.modules = append(g.modules, &groupModule{
 			module: m,
-			mgr:    newManager(g.ctx, makeModuleName(m), "module"),
+			mgr:    mgr,
 		})
 	}
 
@@ -67,7 +76,7 @@ func (g *Group) Start() error {
 	g.initGroupContext()
 
 	for i, m := range g.modules {
-		err := m.module.Start(m.mgr)
+		err := m.module.Start()
 		if err != nil {
 			g.stopFrom(i)
 			return fmt.Errorf("failed to start %s: %w", makeModuleName(m.module), err)
@@ -86,7 +95,7 @@ func (g *Group) stopFrom(index int) (ok bool) {
 	ok = true
 	for i := index; i >= 0; i-- {
 		m := g.modules[i]
-		err := m.module.Stop(m.mgr)
+		err := m.module.Stop()
 		if err != nil {
 			m.mgr.Error("failed to stop", "err", err)
 			ok = false

@@ -128,3 +128,28 @@ func TestRandomGeoMarkerLookups(t *testing.T) {
 		t.Logf("%d out of %d iterations were successful", success, iterations)
 	}
 }
+
+func TestCommonConflictingPrefixes(t *testing.T) {
+	t.Parallel()
+
+	for _, prefix := range CommonConflictingPrefixes {
+		cml, err := LookupCountryMarker(prefix.Addr())
+		if err != nil {
+			// Continue with next if not found.
+			if errors.Is(err, ErrNotFound) {
+				t.Logf("prefix %s is not assigned a geo marker", prefix)
+				continue
+			}
+			// Otherwise, fail hard.
+			t.Fatal(err)
+		}
+		t.Logf(
+			"prefix %s is part of %s, which is assigned to %s %s %s",
+			prefix,
+			cml.Prefix,
+			cml.Continent,
+			cml.Region,
+			cml.Country,
+		)
+	}
+}

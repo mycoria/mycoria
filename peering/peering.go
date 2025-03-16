@@ -17,8 +17,8 @@ import (
 
 // Peering is a peering manager.
 type Peering struct {
-	instance       instance
 	mgr            *mgr.Manager
+	instance       instance
 	frameHandler   chan frame.Frame
 	triggerPeering chan struct{}
 
@@ -51,6 +51,7 @@ type instance interface {
 // New returns a new peering manager.
 func New(instance instance, frameHandler chan frame.Frame) *Peering {
 	p := &Peering{
+		mgr:            mgr.New("peering"),
 		instance:       instance,
 		frameHandler:   frameHandler,
 		triggerPeering: make(chan struct{}, 1),
@@ -63,11 +64,15 @@ func New(instance instance, frameHandler chan frame.Frame) *Peering {
 	return p
 }
 
+// Manager returns the module's manager.
+func (p *Peering) Manager() *mgr.Manager {
+	return p.mgr
+}
+
 // Start starts the peering manager. It:
 // - Starts configured listeners.
 // - Connects to configured peers.
-func (p *Peering) Start(m *mgr.Manager) error {
-	p.mgr = m
+func (p *Peering) Start() error {
 	p.PeeringEvents = mgr.NewEventMgr[*EventPeering]("peering", p.mgr)
 
 	p.mgr.Go("listen manager", p.listenMgr)
@@ -77,7 +82,7 @@ func (p *Peering) Start(m *mgr.Manager) error {
 }
 
 // Stop stops all listeners and links.
-func (p *Peering) Stop(mgr *mgr.Manager) error {
+func (p *Peering) Stop() error {
 	p.mgr.Cancel()
 
 	p.closeAllListeners()

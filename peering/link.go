@@ -117,6 +117,8 @@ type LinkBase struct { //nolint:maligned
 
 	// closing specifies if the link is being closed
 	closing atomic.Bool
+	// closed notifies that the link has been cloed.
+	closed chan struct{}
 
 	// peering references back to the peering manager.
 	peering *Peering
@@ -154,6 +156,7 @@ func newLinkBase(
 		peeringURL:    peeringURL,
 		outgoing:      outgoing,
 		started:       time.Now(),
+		closed:        make(chan struct{}),
 		peering:       peering,
 	}
 	link.latency = link.getFallbackLatency()
@@ -325,6 +328,7 @@ func (link *LinkBase) Close(log func()) {
 
 		link.peering.RemoveLink(link)
 		_ = link.conn.Close()
+		close(link.closed)
 	}
 }
 
@@ -422,6 +426,8 @@ func (link *LinkBase) writer(w *mgr.WorkerCtx) error {
 			select {
 			case f = <-link.sendQueuePrio:
 			case f = <-link.sendQueueRegl:
+			case <-link.closed:
+				return nil
 			case <-w.Done():
 				return nil
 			}

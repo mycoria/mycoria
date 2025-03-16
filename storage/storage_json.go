@@ -27,6 +27,9 @@ type JSONStorageFormat struct {
 // NewJSONFileStorage loads the json file at the given location and returns a new storage.
 func NewJSONFileStorage(filename string) (*JSONFileStorage, error) {
 	s := &JSONFileStorage{
+		MemStorage: MemStorage{
+			mgr: mgr.New("jsonstorage"),
+		},
 		filename: filename,
 	}
 
@@ -59,7 +62,7 @@ func NewJSONFileStorage(filename string) (*JSONFileStorage, error) {
 }
 
 // Stop writes to storage to file.
-func (s *JSONFileStorage) Stop(mgr *mgr.Manager) error {
+func (s *JSONFileStorage) Stop() error {
 	data, err := json.Marshal(&JSONStorageFormat{
 		Routers:  s.routers,
 		Mappings: s.mappings,

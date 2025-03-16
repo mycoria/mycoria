@@ -49,6 +49,7 @@ func New(instance instance, store storage.Storage) *State {
 	}
 
 	return &State{
+		mgr:            mgr.New("state"),
 		storage:        store,
 		maxStorageSize: maxStorageSize,
 
@@ -57,19 +58,23 @@ func New(instance instance, store storage.Storage) *State {
 	}
 }
 
+// Manager returns the module's manager.
+func (state *State) Manager() *mgr.Manager {
+	return state.mgr
+}
+
 // Start starts brings the device online and starts workers.
-func (state *State) Start(mgr *mgr.Manager) error {
-	state.mgr = mgr
-	mgr.Go("session cleaner", state.sessionCleanerWorker)
+func (state *State) Start() error {
+	state.mgr.Go("session cleaner", state.sessionCleanerWorker)
 	return nil
 }
 
 // Stop closes the interface and stops workers.
-func (state *State) Stop(mgr *mgr.Manager) error {
+func (state *State) Stop() error {
 	// Notify workers.
-	mgr.Cancel()
+	state.mgr.Cancel()
 	// Wait for all workers.
-	mgr.WaitForWorkers(10 * time.Second)
+	state.mgr.WaitForWorkers(10 * time.Second)
 
 	return nil
 }

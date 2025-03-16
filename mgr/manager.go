@@ -26,7 +26,7 @@ func New(name string) *Manager {
 
 // NewWithContext returns a new manager that uses the given context.
 func NewWithContext(ctx context.Context, name string) *Manager {
-	return newManager(ctx, name, "manager")
+	return newManager(ctx, name, "module")
 }
 
 func newManager(ctx context.Context, name string, logNameKey string) *Manager {

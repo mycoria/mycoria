@@ -16,6 +16,8 @@ import (
 
 // Switch handles packets based on switch labels.
 type Switch struct {
+	mgr *mgr.Manager
+
 	input       chan frame.Frame
 	routerInput chan frame.Frame
 
@@ -34,22 +36,28 @@ type instance interface {
 // New returns a new switch.
 func New(instance instance, upstreamHandler chan frame.Frame) *Switch {
 	return &Switch{
+		mgr:         mgr.New("switch"),
 		input:       make(chan frame.Frame),
 		routerInput: upstreamHandler,
 		instance:    instance,
 	}
 }
 
+// Manager returns the module's manager.
+func (s *Switch) Manager() *mgr.Manager {
+	return s.mgr
+}
+
 // Start starts the switch.
-func (s *Switch) Start(mgr *mgr.Manager) error {
+func (s *Switch) Start() error {
 	for i := 0; i < runtime.NumCPU(); i++ {
-		mgr.Go("switch", s.handler)
+		s.mgr.Go("switch", s.handler)
 	}
 	return nil
 }
 
 // Stop stops the switch.
-func (s *Switch) Stop(mgr *mgr.Manager) error {
+func (s *Switch) Stop() error {
 	return nil
 }
 

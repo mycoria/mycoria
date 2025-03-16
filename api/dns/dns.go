@@ -20,9 +20,9 @@ import (
 
 // Server is DNS Server.
 type Server struct {
+	mgr      *mgr.Manager
 	instance instance
 	mappings storage.DomainMappingStorage
-	mgr      *mgr.Manager
 
 	dnsServer     *dns.Server
 	dnsServerBind net.PacketConn
@@ -45,6 +45,7 @@ type instance interface {
 func New(instance instance, ln net.PacketConn, mappings storage.DomainMappingStorage) (*Server, error) {
 	// Create HTTP server.
 	srv := &Server{
+		mgr:           mgr.New("dns"),
 		instance:      instance,
 		mappings:      mappings,
 		dnsServerBind: ln,
@@ -67,17 +68,20 @@ func New(instance instance, ln net.PacketConn, mappings storage.DomainMappingSto
 	return srv, nil
 }
 
-// Start starts the API.
-func (srv *Server) Start(m *mgr.Manager) error {
-	srv.mgr = m
+// Manager returns the module's manager.
+func (srv *Server) Manager() *mgr.Manager {
+	return srv.mgr
+}
 
+// Start starts the API.
+func (srv *Server) Start() error {
 	// Start DNS server worker.
-	m.Go("dns server", srv.dnsServerWorker)
+	srv.mgr.Go("dns server", srv.dnsServerWorker)
 
 	// Advertise DNS server via RA.
 	err := srv.SendRouterAdvertisement(srv.instance.Identity().IP)
 	if err != nil {
-		m.Error(
+		srv.mgr.Error(
 			"failed to send router advertisement to announce DNS server",
 			"err", err,
 		)
@@ -87,9 +91,9 @@ func (srv *Server) Start(m *mgr.Manager) error {
 }
 
 // Stop stops the API.
-func (srv *Server) Stop(m *mgr.Manager) error {
+func (srv *Server) Stop() error {
 	if err := srv.dnsServer.Shutdown(); err != nil {
-		m.Error("failed to stop dns server", "err", err)
+		srv.mgr.Error("failed to stop dns server", "err", err)
 	}
 	return nil
 }

@@ -52,6 +52,7 @@ func TestAddressGeneration(t *testing.T) {
 	addr, n, err = GenerateRoutableAddress(
 		context.Background(),
 		[]netip.Prefix{RoamingPrefix},
+		CommonConflictingPrefixes,
 	)
 	if err != nil {
 		t.Error(err)
