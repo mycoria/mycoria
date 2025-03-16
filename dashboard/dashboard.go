@@ -37,8 +37,8 @@ var (
 
 // Dashboard is a dashboard user interface.
 type Dashboard struct {
-	instance instance
 	mgr      *mgr.Manager
+	instance instance
 
 	assetServer http.Handler
 	assetsEtag  string
@@ -87,14 +87,18 @@ func New(instance instance) (*Dashboard, error) {
 	return d, nil
 }
 
+// Manager returns the module's manager.
+func (d *Dashboard) Manager() *mgr.Manager {
+	return d.mgr
+}
+
 // Start starts the router.
-func (d *Dashboard) Start(mgr *mgr.Manager) error {
-	d.mgr = mgr
+func (d *Dashboard) Start() error {
 	return nil
 }
 
 // Stop stops the router.
-func (d *Dashboard) Stop(mgr *mgr.Manager) error {
+func (d *Dashboard) Stop() error {
 	return nil
 }
 

@@ -21,8 +21,9 @@ type Storage interface {
 
 // DatabaseModule is an interface to a managed storage backend.
 type DatabaseModule interface {
-	Start(mgr *mgr.Manager) error
-	Stop(mgr *mgr.Manager) error
+	Start() error
+	Stop() error
+	Manager() *mgr.Manager
 	Size() int
 	Prune(keep int)
 }

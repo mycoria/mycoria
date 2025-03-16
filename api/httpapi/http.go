@@ -18,8 +18,8 @@ import (
 
 // API is an HTTP API manager.
 type API struct {
-	instance instance
 	mgr      *mgr.Manager
+	instance instance
 
 	httpServer         *http.Server
 	httpServerListener net.Listener
@@ -39,6 +39,7 @@ type instance interface {
 func New(instance instance, ln net.Listener) (*API, error) {
 	// Create HTTP server.
 	api := &API{
+		mgr:                mgr.New("api"),
 		instance:           instance,
 		httpServerListener: ln,
 		handlers:           http.NewServeMux(),
@@ -52,18 +53,22 @@ func New(instance instance, ln net.Listener) (*API, error) {
 	return api, nil
 }
 
+// Manager returns the module's manager.
+func (api *API) Manager() *mgr.Manager {
+	return api.mgr
+}
+
 // Start starts the API.
-func (api *API) Start(m *mgr.Manager) error {
-	api.mgr = m
-	m.Go("http server", api.httpServerWorker)
+func (api *API) Start() error {
+	api.mgr.Go("http server", api.httpServerWorker)
 
 	return nil
 }
 
 // Stop stops the API.
-func (api *API) Stop(m *mgr.Manager) error {
+func (api *API) Stop() error {
 	if err := api.httpServer.Close(); err != nil {
-		m.Error("failed to stop http server", "err", err)
+		api.mgr.Error("failed to stop http server", "err", err)
 	}
 	return nil
 }

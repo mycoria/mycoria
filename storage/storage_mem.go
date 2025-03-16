@@ -12,6 +12,8 @@ import (
 
 // MemStorage is a simple storage implementation using memory only.
 type MemStorage struct {
+	mgr *mgr.Manager
+
 	routers     map[netip.Addr]*StoredRouter
 	routersLock sync.RWMutex
 
@@ -22,18 +24,24 @@ type MemStorage struct {
 // NewMemStorage returns an empty storage.
 func NewMemStorage() *MemStorage {
 	return &MemStorage{
+		mgr:      mgr.New("memstorage"),
 		routers:  make(map[netip.Addr]*StoredRouter),
 		mappings: make(map[string]StoredMapping),
 	}
 }
 
+// Manager returns the module's manager.
+func (s *MemStorage) Manager() *mgr.Manager {
+	return s.mgr
+}
+
 // Start does nothing.
-func (s *MemStorage) Start(*mgr.Manager) error {
+func (s *MemStorage) Start() error {
 	return nil
 }
 
 // Stop does nothing.
-func (s *MemStorage) Stop(*mgr.Manager) error {
+func (s *MemStorage) Stop() error {
 	return nil
 }
 

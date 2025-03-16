@@ -62,6 +62,7 @@ func Create(instance instance) (*Device, error) {
 
 	// Create device struct.
 	d := &Device{
+		mgr:            mgr.New("tundevice"),
 		linkName:       linkName,
 		primaryAddress: primaryAddress,
 		secondaryIPs:   make([]netip.Prefix, 0, 2),
@@ -91,24 +92,27 @@ func Create(instance instance) (*Device, error) {
 	return d, nil
 }
 
-// Start starts brings the device online and starts workers.
-func (d *Device) Start(mgr *mgr.Manager) error {
-	d.mgr = mgr
+// Manager returns the module's manager.
+func (d *Device) Manager() *mgr.Manager {
+	return d.mgr
+}
 
+// Start starts brings the device online and starts workers.
+func (d *Device) Start() error {
 	if err := d.StartInterface(); err != nil {
 		return err
 	}
 	d.CheckWorkarounds()
 
-	mgr.Go("read packets", d.tunReader)
-	mgr.Go("write packets", d.tunWriter)
-	mgr.Go("handle tun events", d.handleTunEvents)
+	d.mgr.Go("read packets", d.tunReader)
+	d.mgr.Go("write packets", d.tunWriter)
+	d.mgr.Go("handle tun events", d.handleTunEvents)
 	return nil
 }
 
 // Stop closes the interface and stops workers.
-func (d *Device) Stop(mgr *mgr.Manager) error {
-	mgr.Cancel()
+func (d *Device) Stop() error {
+	d.mgr.Cancel()
 	return d.Close()
 }
 

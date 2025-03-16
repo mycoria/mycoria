@@ -89,6 +89,7 @@ func New(instance instance, routerConfig Config) (*Router, error) {
 
 	// Create router.
 	r := &Router{
+		mgr:          mgr.New("router"),
 		routerConfig: routerConfig,
 		input:        make(chan frame.Frame),
 		table:        tbl,
@@ -127,23 +128,26 @@ func New(instance instance, routerConfig Config) (*Router, error) {
 	return r, nil
 }
 
+// Manager returns the module's manager.
+func (r *Router) Manager() *mgr.Manager {
+	return r.mgr
+}
+
 // Start starts the router.
-func (r *Router) Start(mgr *mgr.Manager) error {
-	r.mgr = mgr
+func (r *Router) Start() error {
+	r.mgr.Go("announce router", r.announceWorker)
+	r.mgr.Go("accounce disconnects", r.disconnectWorker)
+	r.mgr.Go("keep-alive peers", r.keepAliveWorker)
 
-	mgr.Go("announce router", r.announceWorker)
-	mgr.Go("accounce disconnects", r.disconnectWorker)
-	mgr.Go("keep-alive peers", r.keepAliveWorker)
-
-	mgr.Go("clean conn states", r.cleanConnStatesWorker)
-	mgr.Go("clean ping handlers", r.cleanPingHandlersWorker)
-	mgr.Go("clean routing table", r.cleanRoutingTableWorker)
+	r.mgr.Go("clean conn states", r.cleanConnStatesWorker)
+	r.mgr.Go("clean ping handlers", r.cleanPingHandlersWorker)
+	r.mgr.Go("clean routing table", r.cleanRoutingTableWorker)
 
 	for i := 0; i < runtime.NumCPU(); i++ {
-		mgr.Go("router", r.frameHandler)
+		r.mgr.Go("router", r.frameHandler)
 
 		if !r.instance.Config().System.DisableTun {
-			mgr.Go("tun handler", r.handleTun)
+			r.mgr.Go("tun handler", r.handleTun)
 		}
 	}
 
@@ -151,7 +155,7 @@ func (r *Router) Start(mgr *mgr.Manager) error {
 }
 
 // Stop stops the router.
-func (r *Router) Stop(mgr *mgr.Manager) error {
+func (r *Router) Stop() error {
 	// Disable traffic handling.
 	r.handleTraffic.Store(false)
 

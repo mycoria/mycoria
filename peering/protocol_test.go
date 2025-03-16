@@ -11,7 +11,6 @@ import (
 	"github.com/mycoria/mycoria/config"
 	"github.com/mycoria/mycoria/frame"
 	"github.com/mycoria/mycoria/m"
-	"github.com/mycoria/mycoria/mgr"
 )
 
 var testRequest = "hello world"
@@ -34,11 +33,11 @@ func TestProtocol(t *testing.T) {
 	p1 := New(i1, make(chan frame.Frame))
 	p2 := New(i2, make(chan frame.Frame))
 
-	err := p1.Start(mgr.New("peering1"))
+	err := p1.Start()
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = p2.Start(mgr.New("peering2"))
+	err = p2.Start()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,11 +91,11 @@ func TestProtocol(t *testing.T) {
 	assert.Equal(t, testRequest, result1, "result must match")
 	t.Log("received test message!")
 
-	err = p1.Stop(p1.mgr)
+	err = p1.Stop()
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = p2.Stop(p2.mgr)
+	err = p2.Stop()
 	if err != nil {
 		t.Fatal(err)
 	}

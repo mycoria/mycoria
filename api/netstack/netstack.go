@@ -30,6 +30,7 @@ var apiAddress = netip.MustParseAddr("fd00::b909")
 
 // NetStack is virtual network stack to attach services to.
 type NetStack struct {
+	mgr      *mgr.Manager
 	instance instance
 
 	nicID     tcpip.NICID
@@ -54,6 +55,7 @@ type instance interface {
 // Input packets must be submitted manually using SubmitPacket().
 func New(instance instance, tunDevice *tun.Device) (*NetStack, error) {
 	ns := &NetStack{
+		mgr:       mgr.New("netstack"),
 		instance:  instance,
 		nicID:     1,
 		tunDevice: tunDevice,
@@ -93,15 +95,20 @@ func New(instance instance, tunDevice *tun.Device) (*NetStack, error) {
 	return ns, nil
 }
 
+// Manager returns the module's manager.
+func (ns *NetStack) Manager() *mgr.Manager {
+	return ns.mgr
+}
+
 // Start starts the API stack.
-func (ns *NetStack) Start(m *mgr.Manager) error {
-	m.Go("response packet handler", ns.handleResponsePackets)
+func (ns *NetStack) Start() error {
+	ns.mgr.Go("response packet handler", ns.handleResponsePackets)
 
 	return nil
 }
 
 // Stop stops the API stack.
-func (ns *NetStack) Stop(m *mgr.Manager) error {
+func (ns *NetStack) Stop() error {
 	return nil
 }
 
