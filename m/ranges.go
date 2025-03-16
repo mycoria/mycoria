@@ -1,6 +1,8 @@
 package m
 
 import (
+	"fmt"
+	"net"
 	"net/netip"
 	"slices"
 	"time"
@@ -140,4 +142,67 @@ func GetRoutablePrefixesFor(myIP netip.Addr, myPrefix netip.Prefix) []RoutablePr
 	// Reverse for correct lookup priority.
 	slices.Reverse[[]RoutablePrefix, RoutablePrefix](prefixes)
 	return prefixes
+}
+
+// GetLocalConflictingPrefixes searches the local interfaces for possibly
+// conflicting configured prefixes to the given set of prefixes.
+func GetLocalConflictingPrefixes(targetPrefixes []netip.Prefix) ([]netip.Prefix, error) {
+	var conflictingPrefixes []netip.Prefix
+
+	ifs, err := net.Interfaces()
+	if err != nil {
+		return nil, fmt.Errorf("get interfaces from system: %w", err)
+	}
+
+	for _, iface := range ifs {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			return nil, fmt.Errorf("get interface %s addresses: %w", iface.Name, err)
+		}
+
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+
+			prefixIP, ok := netip.AddrFromSlice(ipNet.IP)
+			if !ok {
+				continue
+			}
+
+			prefixSize, _ := ipNet.Mask.Size()
+			if prefixSize == 0 {
+				continue
+			}
+
+			addrPrefix := netip.PrefixFrom(prefixIP, prefixSize)
+			// Ignore Mycoria's range.
+			if addrPrefix == BaseNetPrefix {
+				continue
+			}
+
+			for _, targetPrefix := range targetPrefixes {
+				if addrPrefix.Overlaps(targetPrefix) {
+					conflictingPrefixes = append(conflictingPrefixes, addrPrefix)
+					break
+				}
+			}
+		}
+	}
+
+	// Clean up conflicting prefixes and return.
+	slices.SortFunc(conflictingPrefixes, func(a, b netip.Prefix) int {
+		return a.Addr().Compare(b.Addr())
+	})
+	return slices.Compact(conflictingPrefixes), nil
+}
+
+// CommonConflictingPrefixes defines a list of commonly used prefixes by other
+// software that conflicts with Mycoria.
+var CommonConflictingPrefixes = []netip.Prefix{
+	// Tailscale
+	// https://tailscale.com/kb/1033/ip-and-dns-addresses
+	netip.MustParsePrefix("fd7a:115c:a1e0::/96"),      // Tailscale
+	netip.MustParsePrefix("fd7a:115c:a1e0:ab12::/64"), // Tailscale (previously)
 }

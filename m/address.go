@@ -70,7 +70,7 @@ func GeneratePrivacyAddress(ctx context.Context) (*Address, int, error) {
 	// With 9 bits to get right, there 512 possibilities
 	// and we should need 256 tries on average.
 	// Allow for 100 times of that.
-	addr, n, err := generateAddressSingleCore(ctx, []netip.Prefix{PrivacyAddressPrefix}, 25600)
+	addr, n, err := generateAddressSingleCore(ctx, []netip.Prefix{PrivacyAddressPrefix}, nil, 25600)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -80,7 +80,7 @@ func GeneratePrivacyAddress(ctx context.Context) (*Address, int, error) {
 }
 
 // GenerateRoutableAddress generates a new routable address within the given acceptable prefixes.
-func GenerateRoutableAddress(ctx context.Context, acceptablePrefixes []netip.Prefix) (*Address, int, error) {
+func GenerateRoutableAddress(ctx context.Context, acceptablePrefixes, ignorePrefixes []netip.Prefix) (*Address, int, error) {
 	var highestBits int
 	for _, prefix := range acceptablePrefixes {
 		prefixBits := prefix.Bits()
@@ -93,19 +93,19 @@ func GenerateRoutableAddress(ctx context.Context, acceptablePrefixes []netip.Pre
 	maxTries := int(math.Pow(2, float64(highestBits))) / 2 * 100
 
 	// Generate in the most adequate way.
-	return generateAddressWithTries(ctx, acceptablePrefixes, maxTries)
+	return generateAddressWithTries(ctx, acceptablePrefixes, ignorePrefixes, maxTries)
 }
 
-func generateAddressWithTries(ctx context.Context, acceptablePrefixes []netip.Prefix, tries int) (*Address, int, error) {
+func generateAddressWithTries(ctx context.Context, acceptablePrefixes, ignorePrefixes []netip.Prefix, tries int) (*Address, int, error) {
 	if tries < 10000 || runtime.NumCPU() < 2 {
-		return generateAddressSingleCore(ctx, acceptablePrefixes, tries)
+		return generateAddressSingleCore(ctx, acceptablePrefixes, ignorePrefixes, tries)
 	}
-	return generateAddressMultiCore(ctx, acceptablePrefixes, tries)
+	return generateAddressMultiCore(ctx, acceptablePrefixes, ignorePrefixes, tries)
 }
 
-func generateAddressSingleCore(ctx context.Context, acceptablePrefixes []netip.Prefix, tries int) (*Address, int, error) {
+func generateAddressSingleCore(ctx context.Context, acceptablePrefixes, ignorePrefixes []netip.Prefix, tries int) (*Address, int, error) {
 	for i := 1; i <= tries; i++ {
-		addr, err := tryToGenerateAddress(acceptablePrefixes)
+		addr, err := tryToGenerateAddress(acceptablePrefixes, ignorePrefixes)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -120,7 +120,7 @@ func generateAddressSingleCore(ctx context.Context, acceptablePrefixes []netip.P
 	return nil, 0, ErrMaxTriesReached
 }
 
-func generateAddressMultiCore(ctx context.Context, acceptablePrefixes []netip.Prefix, tries int) (*Address, int, error) {
+func generateAddressMultiCore(ctx context.Context, acceptablePrefixes, ignorePrefixes []netip.Prefix, tries int) (*Address, int, error) {
 	var wg sync.WaitGroup
 	var failedTries atomic.Uint32
 
@@ -141,7 +141,7 @@ func generateAddressMultiCore(ctx context.Context, acceptablePrefixes []netip.Pr
 		go func() {
 			defer wg.Done()
 			for i := 1; i <= maxTriesPerWorker; i++ {
-				addr, err := tryToGenerateAddress(acceptablePrefixes)
+				addr, err := tryToGenerateAddress(acceptablePrefixes, ignorePrefixes)
 				// Report error.
 				if err != nil {
 					select {
@@ -194,7 +194,7 @@ func generateAddressMultiCore(ctx context.Context, acceptablePrefixes []netip.Pr
 	}
 }
 
-func tryToGenerateAddress(acceptablePrefixes []netip.Prefix) (*Address, error) {
+func tryToGenerateAddress(acceptablePrefixes, ignorePrefixes []netip.Prefix) (*Address, error) {
 	// Generate new key pair.
 	pubKey, privKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
@@ -209,6 +209,13 @@ func tryToGenerateAddress(acceptablePrefixes []netip.Prefix) (*Address, error) {
 	// Skip if address is in internal scope.
 	if InternalPrefix.Contains(generatedIP) {
 		return nil, nil
+	}
+
+	// Skip if range should be ignored.
+	for _, ignore := range ignorePrefixes {
+		if ignore.Contains(generatedIP) {
+			return nil, nil
+		}
 	}
 
 	// Check if address matches of the acceptable prefixes.
