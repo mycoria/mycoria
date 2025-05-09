@@ -160,12 +160,34 @@ func (em *EventMgr[T]) Submit(event T) {
 	}
 }
 
+// Destroy cancels all subscriptions and callbacks.
+// Additionally, Destroy also closes all susbcription event channels.
+func (em *EventMgr[T]) Destroy() {
+	em.lock.Lock()
+	defer em.lock.Unlock()
+
+	// Cancel and close subscriptions.
+	for _, sub := range em.subs {
+		sub.Cancel()
+		close(sub.events)
+	}
+	clear(em.subs)
+	em.subs = em.subs[:0]
+
+	// Cancel callbacks.
+	for _, ec := range em.callbacks {
+		ec.canceled.Store(true)
+	}
+	clear(em.callbacks)
+	em.callbacks = em.callbacks[:0]
+}
+
 // clean removes all canceled subscriptions and callbacks.
 func (em *EventMgr[T]) clean() {
-	em.subs = slices.DeleteFunc[[]*EventSubscription[T], *EventSubscription[T]](em.subs, func(es *EventSubscription[T]) bool {
+	em.subs = slices.DeleteFunc(em.subs, func(es *EventSubscription[T]) bool {
 		return es.canceled.Load()
 	})
-	em.callbacks = slices.DeleteFunc[[]*EventCallback[T], *EventCallback[T]](em.callbacks, func(ec *EventCallback[T]) bool {
+	em.callbacks = slices.DeleteFunc(em.callbacks, func(ec *EventCallback[T]) bool {
 		return ec.canceled.Load()
 	})
 }

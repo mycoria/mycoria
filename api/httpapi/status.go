@@ -55,3 +55,11 @@ func (scw *StatusCodeWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	}
 	return nil, nil, errors.New("response does not implement http.Hijacker")
 }
+
+// Flush wraps the original Flush method, if available.
+func (scw *StatusCodeWriter) Flush() {
+	flusher, ok := scw.ResponseWriter.(http.Flusher)
+	if ok {
+		flusher.Flush()
+	}
+}
