@@ -1,16 +1,17 @@
 package mgr
 
 import (
+	"maps"
 	"slices"
 	"sync"
 	"time"
 )
 
-const maxIdleAlertBufferSize = 4
+const keepResolvedAlertsFor = 10 * time.Minute
 
 // AlertMgr manages reported alerts.
 type AlertMgr struct {
-	alerts     []Alert
+	alerts     map[string]*Alert
 	alertsLock sync.Mutex
 
 	alertEvents *EventMgr[AlertUpdate]
@@ -40,8 +41,48 @@ type Alert struct {
 	// CheckedAt describes the time when the alert was last check to still be valid.
 	CheckedAt time.Time
 
+	// ResolvedAt describes the time when the alert was resolved.
+	ResolvedAt time.Time
+
 	// AlertData is alert-specific custom data.
 	AlertData any
+}
+
+// Equals returns whether the two alerts are identical.
+// The alert data is not compared.
+func (a *Alert) Equals(b *Alert) bool {
+	switch {
+	case a.ID != b.ID:
+		return false
+	case a.Name != b.Name:
+		return false
+	case a.Message != b.Message:
+		return false
+	case a.Severity != b.Severity:
+		return false
+	case !a.ReportedAt.Equal(b.ReportedAt):
+		return false
+	case !a.CheckedAt.Equal(b.CheckedAt):
+		return false
+	case !a.ResolvedAt.Equal(b.ResolvedAt):
+		return false
+	default:
+		return true
+	}
+}
+
+// Copy returns a copy of the alert.
+func (a *Alert) Copy() *Alert {
+	return &Alert{
+		ID:         a.ID,
+		Name:       a.Name,
+		Message:    a.Message,
+		Severity:   a.Severity,
+		ReportedAt: a.ReportedAt,
+		CheckedAt:  a.CheckedAt,
+		ResolvedAt: a.ResolvedAt,
+		AlertData:  a.AlertData,
+	}
 }
 
 // AlertSeverity defines severity of an alert.
@@ -49,17 +90,17 @@ type AlertSeverity string
 
 // Alert Severities.
 const (
-	AlertSeverityResolved = "resolved"
-	AlertSeverityInfo     = "info"
-	AlertSeverityWarning  = "warning"
-	AlertSeverityError    = "error"
+	AlertSeverityUndefined = ""
+	AlertSeverityInfo      = "info"
+	AlertSeverityWarning   = "warning"
+	AlertSeverityError     = "error"
 )
 
 // Weight returns a number weighing the gravity of the alert for ordering.
 // Higher is worse.
 func (as AlertSeverity) Weight() int {
 	switch as {
-	case AlertSeverityResolved:
+	case AlertSeverityUndefined:
 		return 0
 	case AlertSeverityInfo:
 		return 1
@@ -75,7 +116,7 @@ func (as AlertSeverity) Weight() int {
 // AlertUpdate is used to update others about an alert change.
 type AlertUpdate struct {
 	Module string
-	Alerts []Alert
+	Alerts []*Alert
 }
 
 // AlertingModule is used for interface checks on modules.
@@ -86,6 +127,7 @@ type AlertingModule interface {
 // NewAlertMgr returns a new alert manager.
 func NewAlertMgr(mgr *Manager) *AlertMgr {
 	return &AlertMgr{
+		alerts:      make(map[string]*Alert),
 		alertEvents: NewEventMgr[AlertUpdate]("alert update", mgr),
 		mgr:         mgr,
 	}
@@ -106,21 +148,21 @@ func (m *AlertMgr) Report(a Alert) {
 	if a.ReportedAt.IsZero() {
 		a.ReportedAt = time.Now()
 	}
-	if a.CheckedAt.IsZero() {
-		a.CheckedAt = a.ReportedAt
-	}
 
-	// Update or add alert in list.
-	index := slices.IndexFunc(m.alerts, func(al Alert) bool {
-		return al.ID == a.ID
-	})
-	if index >= 0 {
-		m.alerts[index] = a
-	} else {
-		m.alerts = append(m.alerts, a)
+	// Update or add alert.
+	existingAlert, ok := m.alerts[a.ID]
+	switch {
+	case !ok:
+		m.alerts[a.ID] = &a
+	case !existingAlert.Equals(&a):
+		m.alerts[a.ID] = &a
+	default:
+		// Alert did not change.
+		return
 	}
 
 	// Export alerts.
+	m.clean()
 	m.alertEvents.Submit(m.export())
 }
 
@@ -134,42 +176,48 @@ func (m *AlertMgr) Resolve(id string) {
 		return
 	}
 
-	// Remove the alert with the given ID from the reported alerts.
-	var alertRemoved bool
-	m.alerts = slices.DeleteFunc(m.alerts, func(a Alert) bool {
-		if a.ID == id {
-			alertRemoved = true
-			return true
-		}
-		return false
-	})
-
-	// If we removed an alert, submit an event with the updated alerts.
-	if alertRemoved {
-		m.alertEvents.Submit(m.export())
-
-		// If there are no reported alerts left, reset the slice if too big.
-		if len(m.alerts) == 0 && cap(m.alerts) > maxIdleAlertBufferSize {
-			m.alerts = nil
-		}
+	// Get the alert that should be resolved.
+	alert, ok := m.alerts[id]
+	if !ok {
+		return
 	}
+
+	// Copy the alert, set it to resolved and save it.
+	copied := alert.Copy()
+	copied.ResolvedAt = time.Now()
+	m.alerts[id] = copied
+
+	// Clean and export.
+	m.clean()
+	m.alertEvents.Submit(m.export())
 }
 
 // ResolveAll resolves all reported alerts.
 func (m *AlertMgr) ResolveAll() {
 	m.alertsLock.Lock()
+	defer m.alertsLock.Unlock()
 
-	// Clear all entries.
-	clear(m.alerts)
-	// Reset slice if too big.
-	if cap(m.alerts) > maxIdleAlertBufferSize {
-		m.alerts = nil
+	// Resolve all alerts that aren't resolved yet.
+	var resolved int
+	for id, alert := range m.alerts {
+		if alert.ResolvedAt.IsZero() {
+			// Copy the alert, set it to resolved and save it.
+			copied := alert.Copy()
+			copied.ResolvedAt = time.Now()
+			m.alerts[id] = copied
+
+			resolved++
+		}
 	}
 
-	m.alertsLock.Unlock()
+	// Return if nothing changed.
+	if resolved == 0 {
+		return
+	}
 
-	// Submit alert update outside of lock to allow changes to alerts within callback.
-	defer m.alertEvents.Submit(m.Export())
+	// Clean and export.
+	m.clean()
+	m.alertEvents.Submit(m.export())
 }
 
 // Export returns the current reported alerts.
@@ -188,11 +236,39 @@ func (m *AlertMgr) export() AlertUpdate {
 		name = m.mgr.name
 	}
 
+	// Copy alerts to slice.
+	exportList := make([]*Alert, 0, len(m.alerts))
+	for _, alert := range m.alerts {
+		exportList = append(exportList, alert)
+	}
+
+	// Sort slice by severity, then reported at.
+	slices.SortFunc(exportList, func(a, b *Alert) int {
+		aW, bW := a.Severity.Weight(), b.Severity.Weight()
+		if aW != bW {
+			return bW - aW
+		}
+		return a.ReportedAt.Compare(b.ReportedAt)
+	})
+
 	// Make a copy of all alerts.
 	return AlertUpdate{
 		Module: name,
-		Alerts: slices.Clone(m.alerts),
+		Alerts: exportList,
 	}
+}
+
+func (m *AlertMgr) clean() (deleted int) {
+	deleteResolvedAlertsBefore := time.Now().Add(-keepResolvedAlertsFor)
+
+	maps.DeleteFunc(m.alerts, func(id string, alert *Alert) bool {
+		if !alert.ResolvedAt.IsZero() && alert.ResolvedAt.Before(deleteResolvedAlertsBefore) {
+			deleted++
+			return true
+		}
+		return false
+	})
+	return deleted
 }
 
 // Subscribe subscribes to alert update events.

@@ -147,6 +147,26 @@ func (g *Group) IsDone() bool {
 	return g.ctx.Err() != nil
 }
 
+// GetAlerts returns the reported alerts of all alerting group modules.
+func (g *Group) GetAlerts() []AlertUpdate {
+	updates := make([]AlertUpdate, 0, len(g.modules))
+	for _, gm := range g.modules {
+		if alertMgr, ok := gm.module.(AlertingModule); ok {
+			updates = append(updates, alertMgr.Alerts().Export())
+		}
+	}
+	return updates
+}
+
+// AddAlertsCallback adds the given callback function to all alerting group modules.
+func (g *Group) AddAlertsCallback(callbackName string, callback EventCallbackFunc[AlertUpdate]) {
+	for _, gm := range g.modules {
+		if alertMgr, ok := gm.module.(AlertingModule); ok {
+			alertMgr.Alerts().AddCallback(callbackName, callback)
+		}
+	}
+}
+
 // RunModules is a simple wrapper function to start modules and stop them again
 // when the given context is canceled.
 func RunModules(ctx context.Context, modules ...Module) error {
