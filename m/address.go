@@ -13,13 +13,14 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/mycoria/crop"
 	"github.com/tevino/abool"
 )
 
 // Default Cryptography.
 const (
-	AddressDigestAlg = BLAKE3
-	AddressKeyToolID = "Ed25519"
+	AddressDigestAlg = crop.BLAKE3
+	AddressKeyToolID = crop.KeyPairTypeEd25519
 )
 
 // Errors.
@@ -31,7 +32,8 @@ var (
 type Address struct {
 	PublicAddress `cbor:"-" json:"-" yaml:"-"` // Prevent serializing.
 
-	PrivateKey ed25519.PrivateKey `cbor:"-" json:"-" yaml:"-"` // Prevent serializing.
+	PrivateKey ed25519.PrivateKey   `cbor:"-" json:"-" yaml:"-"` // Prevent serializing.
+	KeyPair    *crop.Ed25519KeyPair `cbor:"-" json:"-" yaml:"-"` // Prevent serializing.
 }
 
 // Sign signs the given data with the address private key.
@@ -47,8 +49,8 @@ func (addr *Address) SignWithContext(data, context []byte) (sig []byte, err erro
 // PublicAddress is the public part of an address in a shareable form.
 type PublicAddress struct {
 	IP        netip.Addr        `cbor:"i,omitempty" json:"ip,omitempty"   yaml:"ip,omitempty"`
-	Hash      Hash              `cbor:"h,omitempty" json:"hash,omitempty" yaml:"hash,omitempty"`
-	Type      string            `cbor:"t,omitempty" json:"type,omitempty" yaml:"type,omitempty"`
+	Hash      crop.Hash         `cbor:"h,omitempty" json:"hash,omitempty" yaml:"hash,omitempty"`
+	Type      crop.KeyPairType  `cbor:"t,omitempty" json:"type,omitempty" yaml:"type,omitempty"`
 	PublicKey ed25519.PublicKey `cbor:"k,omitempty" json:"key,omitempty"  yaml:"key,omitempty"`
 }
 
@@ -229,6 +231,7 @@ func tryToGenerateAddress(acceptablePrefixes, ignorePrefixes []netip.Prefix) (*A
 					PublicKey: pubKey,
 				},
 				PrivateKey: privKey,
+				KeyPair:    crop.MakeEd25519KeyPair(privKey, pubKey),
 			}, nil
 		}
 	}
@@ -237,7 +240,7 @@ func tryToGenerateAddress(acceptablePrefixes, ignorePrefixes []netip.Prefix) (*A
 }
 
 // DigestToAddress derives an IP address from the given parameters.
-func DigestToAddress(digestAlg Hash, keyToolID string, pubKeyData []byte) (ip netip.Addr, err error) {
+func DigestToAddress(digestAlg crop.Hash, keyToolID crop.KeyPairType, pubKeyData []byte) (ip netip.Addr, err error) {
 	// Digest to IP.
 	digest := digestAlg.Digest(makeDigestData(keyToolID, pubKeyData))
 	if len(digest) < 16 {
@@ -249,7 +252,7 @@ func DigestToAddress(digestAlg Hash, keyToolID string, pubKeyData []byte) (ip ne
 }
 
 // VerifyAddressKey checks if the given IP address matches the digest of the given key type and data.
-func VerifyAddressKey(ip netip.Addr, digestAlg Hash, keyType string, pubKeyData []byte) error {
+func VerifyAddressKey(ip netip.Addr, digestAlg crop.Hash, keyType crop.KeyPairType, pubKeyData []byte) error {
 	// Check parameters.
 	switch {
 	case !ip.IsValid():
@@ -273,7 +276,7 @@ func VerifyAddressKey(ip netip.Addr, digestAlg Hash, keyType string, pubKeyData 
 	return nil
 }
 
-func makeDigestData(keyToolID string, pubKeyData []byte) []byte {
+func makeDigestData(keyToolID crop.KeyPairType, pubKeyData []byte) []byte {
 	digestData := make([]byte, 4, 1+len(keyToolID)+len(pubKeyData))
 	keyToolData := []byte(keyToolID)
 
@@ -297,18 +300,18 @@ func makeDigestData(keyToolID string, pubKeyData []byte) []byte {
 
 // AddressStorage is an address in a storable format.
 type AddressStorage struct {
-	IP         string `json:"ip,omitempty"      yaml:"ip,omitempty"`
-	Hash       string `json:"hash,omitempty"    yaml:"hash,omitempty"`
-	Type       string `json:"type,omitempty"    yaml:"type,omitempty"`
-	PublicKey  string `json:"public,omitempty"  yaml:"public,omitempty"`
-	PrivateKey string `json:"private,omitempty" yaml:"private,omitempty"`
+	IP         string           `json:"ip,omitempty"      yaml:"ip,omitempty"`
+	Hash       crop.Hash        `json:"hash,omitempty"    yaml:"hash,omitempty"`
+	Type       crop.KeyPairType `json:"type,omitempty"    yaml:"type,omitempty"`
+	PublicKey  string           `json:"public,omitempty"  yaml:"public,omitempty"`
+	PrivateKey string           `json:"private,omitempty" yaml:"private,omitempty"`
 }
 
 // Store returns the address in a storable format.
 func (addr *Address) Store() AddressStorage {
 	return AddressStorage{
 		IP:         addr.IP.String(),
-		Hash:       string(addr.Hash),
+		Hash:       addr.Hash,
 		Type:       addr.Type,
 		PublicKey:  hex.EncodeToString(addr.PublicKey),
 		PrivateKey: hex.EncodeToString(addr.PrivateKey),
@@ -333,11 +336,55 @@ func AddressFromStorage(s AddressStorage) (*Address, error) {
 	addr := &Address{
 		PublicAddress: PublicAddress{
 			IP:        ip,
-			Hash:      Hash(s.Hash),
+			Hash:      s.Hash,
 			Type:      s.Type,
 			PublicKey: pubKey,
 		},
 		PrivateKey: privKey,
+		KeyPair: crop.MakeEd25519KeyPair(
+			ed25519.PrivateKey(privKey),
+			ed25519.PublicKey(pubKey),
+		),
+	}
+	if len(addr.PrivateKey) != ed25519.PrivateKeySize {
+		return nil, fmt.Errorf("invalid private key size: %d (should be %d)", len(addr.PrivateKey), ed25519.PrivateKeySize)
+	}
+	if len(addr.PublicKey) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("invalid private key size: %d (should be %d)", len(addr.PublicKey), ed25519.PublicKeySize)
+	}
+	if !addr.Hash.IsValid() {
+		return nil, errors.New("invalid address hash algorithm")
+	}
+	if err := addr.VerifyAddress(); err != nil {
+		return nil, err
+	}
+	if err := addr.verifyPrivateKey(); err != nil {
+		return nil, err
+	}
+	return addr, nil
+}
+
+// AddressFromKeyPair loads and verifies an address from a key pair and custom data.
+func AddressFromKeyPair(keyPair crop.KeyPair, ip netip.Addr, hash crop.Hash) (*Address, error) {
+	// Convert to Ed25519 type.
+	ed25519KeyPair, ok := keyPair.(*crop.Ed25519KeyPair)
+	if !ok {
+		return nil, errors.New("mycoria currently only supports Ed25519 keys")
+	}
+
+	// Create and check address.
+	addr := &Address{
+		PublicAddress: PublicAddress{
+			IP:        ip,
+			Hash:      hash,
+			Type:      keyPair.Type(),
+			PublicKey: ed25519.PublicKey(ed25519KeyPair.PublicKeyData()),
+		},
+		PrivateKey: ed25519.PrivateKey(ed25519KeyPair.PrivateKeyData()),
+		KeyPair: crop.MakeEd25519KeyPair(
+			ed25519.PrivateKey(ed25519KeyPair.PrivateKeyData()),
+			ed25519.PublicKey(ed25519KeyPair.PublicKeyData()),
+		),
 	}
 	if len(addr.PrivateKey) != ed25519.PrivateKeySize {
 		return nil, fmt.Errorf("invalid private key size: %d (should be %d)", len(addr.PrivateKey), ed25519.PrivateKeySize)
