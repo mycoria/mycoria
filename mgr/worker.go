@@ -199,7 +199,7 @@ func (m *Manager) manageWorker(name string, fn func(w *WorkerCtx) error) {
 // The worker context has
 // - A separate context which is canceled when the functions returns.
 // - Access to named structure logging.
-// - Given function is re-run after failure (with backoff).
+// - Given function is NOT re-run when it fails.
 // - Panic catching.
 // - Flow control helpers.
 func (m *Manager) Do(name string, fn func(w *WorkerCtx) error) error {
