@@ -52,6 +52,7 @@ type PublicAddress struct {
 	Hash      crop.Hash         `cbor:"h,omitempty" json:"hash,omitempty" yaml:"hash,omitempty"`
 	Type      crop.KeyPairType  `cbor:"t,omitempty" json:"type,omitempty" yaml:"type,omitempty"`
 	PublicKey ed25519.PublicKey `cbor:"k,omitempty" json:"key,omitempty"  yaml:"key,omitempty"`
+	Easing    uint64            `cbor:"e,omitempty" json:"easing,omitempty"  yaml:"easing,omitempty"`
 }
 
 // VerifySig verifies the given data and signature.
@@ -72,7 +73,7 @@ func GeneratePrivacyAddress(ctx context.Context) (*Address, int, error) {
 	// With 9 bits to get right, there 512 possibilities
 	// and we should need 256 tries on average.
 	// Allow for 100 times of that.
-	addr, n, err := generateAddressSingleCore(ctx, []netip.Prefix{PrivacyAddressPrefix}, nil, 25600)
+	addr, n, err := generateAddressSingleCore(ctx, []netip.Prefix{PrivacyAddressPrefix}, nil, 25600, 0)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -82,7 +83,7 @@ func GeneratePrivacyAddress(ctx context.Context) (*Address, int, error) {
 }
 
 // GenerateRoutableAddress generates a new routable address within the given acceptable prefixes.
-func GenerateRoutableAddress(ctx context.Context, acceptablePrefixes, ignorePrefixes []netip.Prefix) (*Address, int, error) {
+func GenerateRoutableAddress(ctx context.Context, acceptablePrefixes, ignorePrefixes []netip.Prefix, maxEasing uint64) (*Address, int, error) {
 	var highestBits int
 	for _, prefix := range acceptablePrefixes {
 		prefixBits := prefix.Bits()
@@ -95,19 +96,19 @@ func GenerateRoutableAddress(ctx context.Context, acceptablePrefixes, ignorePref
 	maxTries := int(math.Pow(2, float64(highestBits))) / 2 * 100
 
 	// Generate in the most adequate way.
-	return generateAddressWithTries(ctx, acceptablePrefixes, ignorePrefixes, maxTries)
+	return generateAddressWithTries(ctx, acceptablePrefixes, ignorePrefixes, maxTries, maxEasing)
 }
 
-func generateAddressWithTries(ctx context.Context, acceptablePrefixes, ignorePrefixes []netip.Prefix, tries int) (*Address, int, error) {
+func generateAddressWithTries(ctx context.Context, acceptablePrefixes, ignorePrefixes []netip.Prefix, tries int, maxEasing uint64) (*Address, int, error) {
 	if tries < 10000 || runtime.NumCPU() < 2 {
-		return generateAddressSingleCore(ctx, acceptablePrefixes, ignorePrefixes, tries)
+		return generateAddressSingleCore(ctx, acceptablePrefixes, ignorePrefixes, tries, maxEasing)
 	}
-	return generateAddressMultiCore(ctx, acceptablePrefixes, ignorePrefixes, tries)
+	return generateAddressMultiCore(ctx, acceptablePrefixes, ignorePrefixes, tries, maxEasing)
 }
 
-func generateAddressSingleCore(ctx context.Context, acceptablePrefixes, ignorePrefixes []netip.Prefix, tries int) (*Address, int, error) {
+func generateAddressSingleCore(ctx context.Context, acceptablePrefixes, ignorePrefixes []netip.Prefix, tries int, maxEasing uint64) (*Address, int, error) {
 	for i := 1; i <= tries; i++ {
-		addr, err := tryToGenerateAddress(acceptablePrefixes, ignorePrefixes)
+		addr, _, err := tryToGenerateAddress(acceptablePrefixes, ignorePrefixes, maxEasing)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -122,7 +123,7 @@ func generateAddressSingleCore(ctx context.Context, acceptablePrefixes, ignorePr
 	return nil, 0, ErrMaxTriesReached
 }
 
-func generateAddressMultiCore(ctx context.Context, acceptablePrefixes, ignorePrefixes []netip.Prefix, tries int) (*Address, int, error) {
+func generateAddressMultiCore(ctx context.Context, acceptablePrefixes, ignorePrefixes []netip.Prefix, tries int, maxEasing uint64) (*Address, int, error) {
 	var wg sync.WaitGroup
 	var failedTries atomic.Uint32
 
@@ -143,7 +144,7 @@ func generateAddressMultiCore(ctx context.Context, acceptablePrefixes, ignorePre
 		go func() {
 			defer wg.Done()
 			for i := 1; i <= maxTriesPerWorker; i++ {
-				addr, err := tryToGenerateAddress(acceptablePrefixes, ignorePrefixes)
+				addr, _, err := tryToGenerateAddress(acceptablePrefixes, ignorePrefixes, maxEasing)
 				// Report error.
 				if err != nil {
 					select {
@@ -196,63 +197,71 @@ func generateAddressMultiCore(ctx context.Context, acceptablePrefixes, ignorePre
 	}
 }
 
-func tryToGenerateAddress(acceptablePrefixes, ignorePrefixes []netip.Prefix) (*Address, error) {
+func tryToGenerateAddress(acceptablePrefixes, ignorePrefixes []netip.Prefix, maxEasing uint64) (*Address, uint64, error) {
 	// Generate new key pair.
 	pubKey, privKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
-		return nil, err
-	}
-	// Digest public key to address.
-	generatedIP, err := DigestToAddress(AddressDigestAlg, "Ed25519", pubKey)
-	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	// Skip if address is in internal scope.
-	if InternalPrefix.Contains(generatedIP) {
-		return nil, nil
-	}
+	// Prepare for hashing.
+	h := AddressDigestAlg.New()
+	baseBuf := makeAddressDigestData(crop.KeyPairTypeEd25519, pubKey)
+	easingBuf := make([]byte, 8)
+	digestBuf := make([]byte, 512/8)
 
-	// Skip if range should be ignored.
-	for _, ignore := range ignorePrefixes {
-		if ignore.Contains(generatedIP) {
-			return nil, nil
+	for easing := uint64(0); easing <= maxEasing; easing++ {
+		// Make digest.
+		h.Reset()
+		_, _ = h.Write(baseBuf)
+		if easing > 0 {
+			PutUint64(easingBuf, easing)
+			h.Write(easingBuf)
+		}
+		digestBuf = digestBuf[:0]
+		digestBuf = h.Sum(digestBuf)
+
+		// Make address from digest.
+		generatedIP, err := digestToAddress(digestBuf)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		// Skip if address is in internal scope.
+		if InternalPrefix.Contains(generatedIP) {
+			return nil, 0, nil
+		}
+
+		// Skip if range should be ignored.
+		for _, ignore := range ignorePrefixes {
+			if ignore.Contains(generatedIP) {
+				return nil, 0, nil
+			}
+		}
+
+		// Check if address matches of the acceptable prefixes.
+		for _, prefix := range acceptablePrefixes {
+			if prefix.Contains(generatedIP) {
+				return &Address{
+					PublicAddress: PublicAddress{
+						IP:        generatedIP,
+						Hash:      AddressDigestAlg,
+						Type:      crop.KeyPairTypeEd25519,
+						PublicKey: pubKey,
+						Easing:    easing,
+					},
+					PrivateKey: privKey,
+					KeyPair:    crop.MakeEd25519KeyPair(privKey, pubKey),
+				}, easing + 1, nil
+			}
 		}
 	}
 
-	// Check if address matches of the acceptable prefixes.
-	for _, prefix := range acceptablePrefixes {
-		if prefix.Contains(generatedIP) {
-			return &Address{
-				PublicAddress: PublicAddress{
-					IP:        generatedIP,
-					Hash:      AddressDigestAlg,
-					Type:      "Ed25519",
-					PublicKey: pubKey,
-				},
-				PrivateKey: privKey,
-				KeyPair:    crop.MakeEd25519KeyPair(privKey, pubKey),
-			}, nil
-		}
-	}
-
-	return nil, nil
-}
-
-// DigestToAddress derives an IP address from the given parameters.
-func DigestToAddress(digestAlg crop.Hash, keyToolID crop.KeyPairType, pubKeyData []byte) (ip netip.Addr, err error) {
-	// Digest to IP.
-	digest := digestAlg.Digest(makeDigestData(keyToolID, pubKeyData))
-	if len(digest) < 16 {
-		return netip.Addr{}, fmt.Errorf("digest has only %d/16 of required bytes", len(digest))
-	}
-	ip = netip.AddrFrom16([16]byte(digest[:16]))
-
-	return ip, nil
+	return nil, 0, nil
 }
 
 // VerifyAddressKey checks if the given IP address matches the digest of the given key type and data.
-func VerifyAddressKey(ip netip.Addr, digestAlg crop.Hash, keyType crop.KeyPairType, pubKeyData []byte) error {
+func VerifyAddressKey(ip netip.Addr, digestAlg crop.Hash, keyType crop.KeyPairType, pubKeyData []byte, easing uint64) error {
 	// Check parameters.
 	switch {
 	case !ip.IsValid():
@@ -264,8 +273,9 @@ func VerifyAddressKey(ip netip.Addr, digestAlg crop.Hash, keyType crop.KeyPairTy
 	case len(pubKeyData) == 0:
 		return errors.New("key not specified")
 	}
+
 	// Make comparison.
-	digest := digestAlg.Digest(makeDigestData(keyType, pubKeyData))
+	digest := makeAddressDigest(digestAlg, keyType, pubKeyData, easing)
 	if len(digest) < 16 {
 		return fmt.Errorf("digest has only %d/16 of required bytes", len(digest))
 	}
@@ -276,35 +286,76 @@ func VerifyAddressKey(ip netip.Addr, digestAlg crop.Hash, keyType crop.KeyPairTy
 	return nil
 }
 
-func makeDigestData(keyToolID crop.KeyPairType, pubKeyData []byte) []byte {
-	digestData := make([]byte, 4, 1+len(keyToolID)+len(pubKeyData))
-	keyToolData := []byte(keyToolID)
+// DigestToAddress derives an IP address from the given parameters.
+func DigestToAddress(digestAlg crop.Hash, keyToolID crop.KeyPairType, pubKeyData []byte, easing uint64) (ip netip.Addr, err error) {
+	digest := makeAddressDigest(digestAlg, keyToolID, pubKeyData, easing)
+	return digestToAddress(digest)
+}
 
+func digestToAddress(digest []byte) (ip netip.Addr, err error) {
+	// Digest to IP.
+	if len(digest) < 16 {
+		return netip.Addr{}, fmt.Errorf("digest has only %d/16 of required bytes", len(digest))
+	}
+	ip = netip.AddrFrom16([16]byte(digest[:16]))
+
+	return ip, nil
+}
+
+func makeAddressDigest(digestAlg crop.Hash, keyToolID crop.KeyPairType, pubKeyData []byte, easing uint64) []byte {
+	// Create hasher.
+	h := digestAlg.New()
+
+	// Hash data.
+	_, _ = h.Write(makeAddressDigestData(keyToolID, pubKeyData))
+
+	// Hash easing, if used.
+	if easing > 0 {
+		easingBuf := make([]byte, 8)
+		PutUint64(easingBuf, easing)
+		h.Write(easingBuf)
+	}
+
+	// Return result.
+	defer h.Reset()
+	return h.Sum(nil)
+}
+
+func makeAddressDigestData(keyToolID crop.KeyPairType, pubKeyData []byte) []byte {
 	// Check sizes.
+	keyToolData := []byte(keyToolID)
 	if len(keyToolData) > 0xFF || len(pubKeyData) > 0xFFFF {
 		// Will be triggered in tests or generation at worst, but not in router.
 		panic("sizes out of bound")
 	}
 
+	// Create buf in the right size.
+	buf := make([]byte, 4+len(keyToolID)+len(pubKeyData))
+
 	// Metadata.
-	digestData[0] = 1                                   // Version
-	digestData[1] = uint8(len(keyToolData))             // Key Type Length
-	PutUint16(digestData[2:4], uint16(len(pubKeyData))) // Public Key Length
+	buf[0] = 1                                   // Version
+	buf[1] = uint8(len(keyToolData))             // Key Type Length
+	PutUint16(buf[2:4], uint16(len(pubKeyData))) // Public Key Length
 
 	// Data.
-	digestData = append(digestData, keyToolData...) // Key Type
-	digestData = append(digestData, pubKeyData...)  // Public Key
+	if copy(buf[4:], keyToolData) != len(keyToolData) {
+		panic("buf too small")
+	}
+	if copy(buf[4+len(keyToolData):], pubKeyData) != len(pubKeyData) {
+		panic("buf too small")
+	}
 
-	return digestData
+	return buf
 }
 
 // AddressStorage is an address in a storable format.
 type AddressStorage struct {
-	IP         string           `json:"ip,omitempty"      yaml:"ip,omitempty"`
-	Hash       crop.Hash        `json:"hash,omitempty"    yaml:"hash,omitempty"`
-	Type       crop.KeyPairType `json:"type,omitempty"    yaml:"type,omitempty"`
-	PublicKey  string           `json:"public,omitempty"  yaml:"public,omitempty"`
-	PrivateKey string           `json:"private,omitempty" yaml:"private,omitempty"`
+	IP         string           `json:"ip,omitzero"      yaml:"ip,omitzero"`
+	Hash       crop.Hash        `json:"hash,omitzero"    yaml:"hash,omitzero"`
+	Type       crop.KeyPairType `json:"type,omitzero"    yaml:"type,omitzero"`
+	PublicKey  string           `json:"public,omitzero"  yaml:"public,omitzero"`
+	PrivateKey string           `json:"private,omitzero" yaml:"private,omitzero"`
+	Easing     uint64           `json:"easing,omitzero"  yaml:"easing,omitzero"`
 }
 
 // Store returns the address in a storable format.
@@ -315,6 +366,7 @@ func (addr *Address) Store() AddressStorage {
 		Type:       addr.Type,
 		PublicKey:  hex.EncodeToString(addr.PublicKey),
 		PrivateKey: hex.EncodeToString(addr.PrivateKey),
+		Easing:     addr.Easing,
 	}
 }
 
@@ -339,6 +391,7 @@ func AddressFromStorage(s AddressStorage) (*Address, error) {
 			Hash:      s.Hash,
 			Type:      s.Type,
 			PublicKey: pubKey,
+			Easing:    s.Easing,
 		},
 		PrivateKey: privKey,
 		KeyPair: crop.MakeEd25519KeyPair(
@@ -365,7 +418,7 @@ func AddressFromStorage(s AddressStorage) (*Address, error) {
 }
 
 // AddressFromKeyPair loads and verifies an address from a key pair and custom data.
-func AddressFromKeyPair(keyPair crop.KeyPair, ip netip.Addr, hash crop.Hash) (*Address, error) {
+func AddressFromKeyPair(keyPair crop.KeyPair, ip netip.Addr, hash crop.Hash, easing uint64) (*Address, error) {
 	// Convert to Ed25519 type.
 	ed25519KeyPair, ok := keyPair.(*crop.Ed25519KeyPair)
 	if !ok {
@@ -379,6 +432,7 @@ func AddressFromKeyPair(keyPair crop.KeyPair, ip netip.Addr, hash crop.Hash) (*A
 			Hash:      hash,
 			Type:      keyPair.Type(),
 			PublicKey: ed25519.PublicKey(ed25519KeyPair.PublicKeyData()),
+			Easing:    easing,
 		},
 		PrivateKey: ed25519.PrivateKey(ed25519KeyPair.PrivateKeyData()),
 		KeyPair: crop.MakeEd25519KeyPair(
@@ -411,7 +465,7 @@ func (addr *PublicAddress) VerifyAddress() error {
 		return errors.New("invalid ip address")
 	}
 
-	return VerifyAddressKey(addr.IP, addr.Hash, addr.Type, addr.PublicKey)
+	return VerifyAddressKey(addr.IP, addr.Hash, addr.Type, addr.PublicKey, addr.Easing)
 }
 
 var privateKeyVerificationData = []byte("The quick brown fox jumps over the lazy dog. ")

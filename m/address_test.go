@@ -1,8 +1,8 @@
 package m
 
 import (
-	"context"
 	"crypto/ed25519"
+	"fmt"
 	"net/netip"
 	"testing"
 	"time"
@@ -16,18 +16,18 @@ func TestAddressGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	generatedIP, err := DigestToAddress(AddressDigestAlg, "Ed25519", pubKey)
+	generatedIP, err := DigestToAddress(AddressDigestAlg, "Ed25519", pubKey, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = VerifyAddressKey(generatedIP, AddressDigestAlg, "Ed25519", pubKey)
+	err = VerifyAddressKey(generatedIP, AddressDigestAlg, "Ed25519", pubKey, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Test brute-force generating a privacy address.
 	start := time.Now()
-	addr, n, err := GeneratePrivacyAddress(context.Background())
+	addr, n, err := GeneratePrivacyAddress(t.Context())
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -50,9 +50,10 @@ func TestAddressGeneration(t *testing.T) {
 	// Test brute-force generating a routable address.
 	start = time.Now()
 	addr, n, err = GenerateRoutableAddress(
-		context.Background(),
-		[]netip.Prefix{RoamingPrefix},
+		t.Context(),
+		[]netip.Prefix{ExperimentsPrefix},
 		CommonConflictingPrefixes,
+		0xFFFF_FFFF,
 	)
 	if err != nil {
 		t.Error(err)
@@ -72,4 +73,57 @@ func TestAddressGeneration(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+func BenchmarkAddressGeneration(b *testing.B) {
+	b.Run("16 bits no easing", func(b *testing.B) {
+		for b.Loop() {
+			start := time.Now()
+			addr, n, err := GenerateRoutableAddress(
+				b.Context(),
+				[]netip.Prefix{ExperimentsPrefix},
+				CommonConflictingPrefixes,
+				0,
+			)
+			if err != nil {
+				b.Fatal(err)
+			}
+			taken := time.Since(start)
+			if addr != nil {
+				fmt.Printf("address: %s\n", addr.IP)
+			} else {
+				fmt.Println("no address")
+			}
+			fmt.Printf(
+				"time total: %s; per try: %s\n",
+				taken,
+				taken/time.Duration(n+1),
+			)
+		}
+	})
+
+	b.Run("16 bits full easing", func(b *testing.B) {
+		for b.Loop() {
+			start := time.Now()
+			addr, n, err := tryToGenerateAddress(
+				[]netip.Prefix{ExperimentsPrefix},
+				CommonConflictingPrefixes,
+				0xFFFF_FFFF_FFFF_FFFF,
+			)
+			if err != nil {
+				b.Fatal(err)
+			}
+			taken := time.Since(start)
+			if addr != nil {
+				fmt.Printf("address: %s\n", addr.IP)
+			} else {
+				fmt.Println("no address")
+			}
+			fmt.Printf(
+				"time total: %s; per try: %s\n",
+				taken,
+				taken/time.Duration(n+1),
+			)
+		}
+	})
 }
