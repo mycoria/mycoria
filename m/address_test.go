@@ -75,6 +75,39 @@ func TestAddressGeneration(t *testing.T) {
 	}
 }
 
+func TestOldAddresss(t *testing.T) {
+	t.Parallel()
+
+	for name, storedAddr := range oldAddresses {
+		t.Run(name, func(t *testing.T) {
+			addr, err := AddressFromStorage(storedAddr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = addr.verifyPrivateKey()
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = addr.PublicAddress.VerifyAddress()
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+var (
+	oldAddresses = map[string]AddressStorage{
+		"pre easing": {
+			IP:         "fded:365:6fc:518:b9ec:c31e:4565:6bf2",
+			Hash:       "BLAKE3",
+			Type:       "Ed25519",
+			PublicKey:  "ce859dda74f73f975d7c3ea51b1942f833e78b8a263dd7a981d3d8d206661170",
+			PrivateKey: "a6c76135f1a94ced3f303d219861c00a464f1ffe46f1362decd6edd0a2b45639ce859dda74f73f975d7c3ea51b1942f833e78b8a263dd7a981d3d8d206661170",
+		},
+	}
+)
+
 func BenchmarkAddressGeneration(b *testing.B) {
 	b.Run("16 bits no easing", func(b *testing.B) {
 		for b.Loop() {
