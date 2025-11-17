@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/mycoria/mycoria/m"
+	"github.com/mycoria/crop"
 )
 
 const (
@@ -47,7 +47,7 @@ func (d *Dashboard) CheckRequestToken(nonce, token string, actions ...string) (o
 }
 
 func (d *Dashboard) calculateToken(nonce string, actions ...string) string {
-	hasher := m.BLAKE2b_256.New()
+	hasher := crop.BLAKE2b_256.New()
 
 	// Write secret, nonce and lengths.
 	_, _ = hasher.Write(d.tokenSecret)

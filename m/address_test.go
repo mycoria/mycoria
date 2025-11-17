@@ -75,7 +75,7 @@ func TestAddressGeneration(t *testing.T) {
 	}
 }
 
-func TestOldAddresss(t *testing.T) {
+func TestOldAddresses(t *testing.T) {
 	t.Parallel()
 
 	for name, storedAddr := range oldAddresses {

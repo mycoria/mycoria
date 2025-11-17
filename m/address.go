@@ -213,7 +213,7 @@ func tryToGenerateAddress(acceptablePrefixes, ignorePrefixes []netip.Prefix, max
 	for easing := uint64(0); easing <= maxEasing; easing++ {
 		// Make digest.
 		h.Reset()
-		_, _ = h.Write(baseBuf)
+		_, _ = h.Write(baseBuf) // hash.Hash never returns an error on Write().
 		if easing > 0 {
 			PutUint64(easingBuf, easing)
 			h.Write(easingBuf)
@@ -403,7 +403,7 @@ func AddressFromStorage(s AddressStorage) (*Address, error) {
 		return nil, fmt.Errorf("invalid private key size: %d (should be %d)", len(addr.PrivateKey), ed25519.PrivateKeySize)
 	}
 	if len(addr.PublicKey) != ed25519.PublicKeySize {
-		return nil, fmt.Errorf("invalid private key size: %d (should be %d)", len(addr.PublicKey), ed25519.PublicKeySize)
+		return nil, fmt.Errorf("invalid public key size: %d (should be %d)", len(addr.PublicKey), ed25519.PublicKeySize)
 	}
 	if !addr.Hash.IsValid() {
 		return nil, errors.New("invalid address hash algorithm")

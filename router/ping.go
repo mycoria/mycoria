@@ -13,6 +13,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
+	"github.com/mycoria/crop"
 	"github.com/mycoria/mycoria/frame"
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/mgr"
@@ -38,8 +39,8 @@ type PingHeader struct {
 	PingType  string            `cbor:"t,omitempty" json:"t,omitempty"`
 	PingCode  uint8             `cbor:"c,omitempty" json:"c,omitempty"`
 	FollowUp  bool              `cbor:"f,omitempty" json:"f,omitempty"`
-	AddrHash  m.Hash            `cbor:"h,omitempty" json:"h,omitempty"`
-	KeyType   string            `cbor:"a,omitempty" json:"a,omitempty"`
+	AddrHash  crop.Hash         `cbor:"h,omitempty" json:"h,omitempty"`
+	KeyType   crop.KeyPairType  `cbor:"a,omitempty" json:"a,omitempty"`
 	PublicKey ed25519.PublicKey `cbor:"k,omitempty" json:"k,omitempty"`
 }
 

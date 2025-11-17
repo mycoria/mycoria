@@ -10,6 +10,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
+	"github.com/mycoria/crop"
 	"github.com/mycoria/mycoria/frame"
 	"github.com/mycoria/mycoria/m"
 	"github.com/mycoria/mycoria/state"
@@ -431,5 +432,5 @@ func makeUniverseAuth(universe, secret string, challenge []byte, remoteIP, idIP 
 	authData = append(authData, idIP.AsSlice()...)
 
 	// Hash and return.
-	return m.BLAKE3.Digest(authData)
+	return crop.BLAKE3.Digest(authData)
 }
