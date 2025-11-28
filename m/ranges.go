@@ -77,6 +77,15 @@ const (
 	// A full Organization Prefix would then be /32.
 	OrganizationBits = 16
 
+	// NexusPoolMarker designates the nexus pool network.
+	NexusPoolMarker = 0b0000_1100
+
+	// NexusOrgMarker designates a nexus organizational network.
+	NexusOrgMarker = 0b0000_1101
+	// NexusOrgBits is the org ID length in bits that addresses of the same organisation should share.
+	// A full Organization Prefix would then be /48.
+	NexusOrgBits = 32
+
 	// AnycastMarker designates an anycast network.
 	AnycastMarker = 0b0000_1110
 	// AnycastBits is the anycast network ID length in bits that addresses of the same anycast network should share.
@@ -90,12 +99,16 @@ const (
 
 // Special "Region" Prefixes.
 var (
-	SpecialPrefix      = MustPrefix([]byte{BaseNet, TypeRoutingAddress | ContinentSpecial}, 12)
-	RoamingPrefix      = MustPrefix([]byte{BaseNet, TypeRoutingAddress | ContinentSpecial | RoamingMarker}, 16)
+	SpecialPrefix = MustPrefix([]byte{BaseNet, TypeRoutingAddress | ContinentSpecial}, 12)
+	RoamingPrefix = MustPrefix([]byte{BaseNet, TypeRoutingAddress | ContinentSpecial | RoamingMarker}, 16)
+
 	OrganizationPrefix = MustPrefix([]byte{BaseNet, TypeRoutingAddress | ContinentSpecial | OrganizationMarker}, 16)
-	AnycastPrefix      = MustPrefix([]byte{BaseNet, TypeRoutingAddress | ContinentSpecial | AnycastMarker}, 16)
-	ExperimentsPrefix  = MustPrefix([]byte{BaseNet, TypeRoutingAddress | ContinentSpecial | ExperimentsMarker}, 16)
-	InternalPrefix     = MustPrefix([]byte{BaseNet, TypeRoutingAddress}, 112)
+	NexusPoolPrefix    = MustPrefix([]byte{BaseNet, TypeRoutingAddress | ContinentSpecial | NexusPoolMarker}, 16)
+	NexusOrgPrefix     = MustPrefix([]byte{BaseNet, TypeRoutingAddress | ContinentSpecial | NexusOrgMarker}, 16)
+
+	AnycastPrefix     = MustPrefix([]byte{BaseNet, TypeRoutingAddress | ContinentSpecial | AnycastMarker}, 16)
+	ExperimentsPrefix = MustPrefix([]byte{BaseNet, TypeRoutingAddress | ContinentSpecial | ExperimentsMarker}, 16)
+	InternalPrefix    = MustPrefix([]byte{BaseNet, TypeRoutingAddress}, 112)
 )
 
 // GetRoutablePrefixesFor returns the routable prefix for the given own IP as
@@ -140,7 +153,7 @@ func GetRoutablePrefixesFor(myIP netip.Addr, myPrefix netip.Prefix) []RoutablePr
 	}
 
 	// Reverse for correct lookup priority.
-	slices.Reverse[[]RoutablePrefix, RoutablePrefix](prefixes)
+	slices.Reverse(prefixes)
 	return prefixes
 }
 

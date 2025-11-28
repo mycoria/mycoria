@@ -63,7 +63,7 @@ func generate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Generate address.
-	addr, _, err := m.GenerateRoutableAddress(cmd.Context(), []netip.Prefix{prefix}, m.CommonConflictingPrefixes)
+	addr, _, err := m.GenerateRoutableAddress(cmd.Context(), []netip.Prefix{prefix}, m.CommonConflictingPrefixes, 0)
 	if err != nil {
 		return fmt.Errorf("failed to generate address: %w", err)
 	}
