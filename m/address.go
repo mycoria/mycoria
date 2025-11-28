@@ -417,6 +417,34 @@ func AddressFromStorage(s AddressStorage) (*Address, error) {
 	return addr, nil
 }
 
+// PublicAddressFromKeyPair loads and verifies a public address from a key pair and custom data.
+func PublicAddressFromKeyPair(keyPair crop.KeyPair, ip netip.Addr, hash crop.Hash, easing uint64) (*PublicAddress, error) {
+	// Convert to Ed25519 type.
+	ed25519KeyPair, ok := keyPair.(*crop.Ed25519KeyPair)
+	if !ok {
+		return nil, errors.New("mycoria currently only supports Ed25519 keys")
+	}
+
+	// Create and check address.
+	addr := &PublicAddress{
+		IP:        ip,
+		Hash:      hash,
+		Type:      keyPair.Type(),
+		PublicKey: ed25519.PublicKey(ed25519KeyPair.PublicKeyData()),
+		Easing:    easing,
+	}
+	if len(addr.PublicKey) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("invalid public key size: %d (should be %d)", len(addr.PublicKey), ed25519.PublicKeySize)
+	}
+	if !addr.Hash.IsValid() {
+		return nil, errors.New("invalid address hash algorithm")
+	}
+	if err := addr.VerifyAddress(); err != nil {
+		return nil, err
+	}
+	return addr, nil
+}
+
 // AddressFromKeyPair loads and verifies an address from a key pair and custom data.
 func AddressFromKeyPair(keyPair crop.KeyPair, ip netip.Addr, hash crop.Hash, easing uint64) (*Address, error) {
 	// Convert to Ed25519 type.
@@ -444,7 +472,7 @@ func AddressFromKeyPair(keyPair crop.KeyPair, ip netip.Addr, hash crop.Hash, eas
 		return nil, fmt.Errorf("invalid private key size: %d (should be %d)", len(addr.PrivateKey), ed25519.PrivateKeySize)
 	}
 	if len(addr.PublicKey) != ed25519.PublicKeySize {
-		return nil, fmt.Errorf("invalid private key size: %d (should be %d)", len(addr.PublicKey), ed25519.PublicKeySize)
+		return nil, fmt.Errorf("invalid public key size: %d (should be %d)", len(addr.PublicKey), ed25519.PublicKeySize)
 	}
 	if !addr.Hash.IsValid() {
 		return nil, errors.New("invalid address hash algorithm")
