@@ -23,7 +23,7 @@ require (
 	github.com/mdlayher/ndp v1.1.0
 	github.com/miekg/dns v1.1.68
 	github.com/mitchellh/copystructure v1.2.0
-	github.com/mycoria/crop v0.2.0
+	github.com/mycoria/crop v0.3.0
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
