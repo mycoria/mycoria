@@ -11,6 +11,10 @@ import (
 	"time"
 )
 
+// FindPanicsInPackages configures a list of package names (or anything in the
+// package path) that will be matched in order to find the source of a panic.
+var FindPanicsInPackages = []string{}
+
 // workerContextKey is a key used for the context key/value storage.
 type workerContextKey struct{}
 
@@ -186,6 +190,31 @@ func (m *Manager) manageWorker(name string, fn func(w *WorkerCtx) error) {
 					"err", err,
 				)
 			}
+
+			// Report error as alert.
+			alertMgr := m.GetWorkerErrorMgr()
+			if alertMgr != nil {
+				if panicInfo != "" || strings.Contains(err.Error(), "panic") {
+					alertMgr.Report(Alert{
+						ID:            fmt.Sprintf("worker-panic: %s", name),
+						Name:          "Worker Panic: " + name,
+						Message:       fmt.Sprintf("Worker %s panicked: %v", name, err),
+						Severity:      AlertSeverityCritical,
+						ReportedAt:    time.Now(),
+						AlertDataType: "text",
+						AlertData:     panicInfo,
+					})
+				} else {
+					alertMgr.Report(Alert{
+						ID:         fmt.Sprintf("worker-error: %s", name),
+						Name:       "Worker Error: " + name,
+						Message:    fmt.Sprintf("Worker %s failed: %v", name, err),
+						Severity:   AlertSeverityError,
+						ReportedAt: time.Now(),
+					})
+				}
+			}
+
 			select {
 			case <-time.After(backoff):
 			case <-m.ctx.Done():
@@ -274,6 +303,13 @@ func (m *Manager) runWorker(w *WorkerCtx, fn func(w *WorkerCtx) error) (panicInf
 							panicInfo = strings.SplitN(strings.TrimSpace(stackLines[i+1]), " ", 2)[0]
 						}
 						break
+					} else if len(FindPanicsInPackages) > 0 {
+						for _, pkg := range FindPanicsInPackages {
+							if strings.Contains(line, pkg) {
+								panicInfo = strings.SplitN(strings.TrimSpace(stackLines[i+1]), " ", 2)[0]
+								break
+							}
+						}
 					}
 				}
 			}

@@ -30,6 +30,12 @@ type Module interface {
 	Stop() error
 }
 
+// ModuleWithWorkerErrorAlertManager is a module that can get and set a worker error alert manager.
+type ModuleWithWorkerErrorAlertManager interface {
+	GetWorkerErrorAlertManager() *AlertMgr
+	SetWorkerErrorAlertManager(alertManager *AlertMgr)
+}
+
 // NewGroup returns a new group of modules.
 func NewGroup(modules ...Module) *Group {
 	// Create group.
