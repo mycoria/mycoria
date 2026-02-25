@@ -17,6 +17,8 @@ type Manager struct {
 
 	workerCnt   atomic.Int32
 	workersDone chan struct{}
+
+	errorAlertManager atomic.Pointer[AlertMgr]
 }
 
 // New returns a new manager.
@@ -62,6 +64,16 @@ func (m *Manager) Done() <-chan struct{} {
 // IsDone checks whether the manager context is done.
 func (m *Manager) IsDone() bool {
 	return m.ctx.Err() != nil
+}
+
+// SetWorkerErrorMgr sets an alert manager that receives worker errors from manager.
+func (m *Manager) SetWorkerErrorMgr(alertManager *AlertMgr) {
+	m.errorAlertManager.Store(alertManager)
+}
+
+// GetWorkerErrorMgr returns the alert manager that receives worker errors from manager.
+func (m *Manager) GetWorkerErrorMgr() *AlertMgr {
+	return m.errorAlertManager.Load()
 }
 
 // LogEnabled reports whether the logger emits log records at the given level.

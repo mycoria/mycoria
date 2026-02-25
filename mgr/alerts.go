@@ -44,6 +44,9 @@ type Alert struct {
 	// ResolvedAt describes the time when the alert was resolved.
 	ResolvedAt time.Time
 
+	// AlertDataType describes the type of the alert data.
+	AlertDataType string
+
 	// AlertData is alert-specific custom data.
 	AlertData any
 }
@@ -74,14 +77,15 @@ func (a *Alert) Equals(b *Alert) bool {
 // Copy returns a copy of the alert.
 func (a *Alert) Copy() *Alert {
 	return &Alert{
-		ID:         a.ID,
-		Name:       a.Name,
-		Message:    a.Message,
-		Severity:   a.Severity,
-		ReportedAt: a.ReportedAt,
-		CheckedAt:  a.CheckedAt,
-		ResolvedAt: a.ResolvedAt,
-		AlertData:  a.AlertData,
+		ID:            a.ID,
+		Name:          a.Name,
+		Message:       a.Message,
+		Severity:      a.Severity,
+		ReportedAt:    a.ReportedAt,
+		CheckedAt:     a.CheckedAt,
+		ResolvedAt:    a.ResolvedAt,
+		AlertDataType: a.AlertDataType,
+		AlertData:     a.AlertData,
 	}
 }
 
@@ -90,10 +94,11 @@ type AlertSeverity string
 
 // Alert Severities.
 const (
-	AlertSeverityUndefined = ""
-	AlertSeverityInfo      = "info"
-	AlertSeverityWarning   = "warning"
-	AlertSeverityError     = "error"
+	AlertSeverityUndefined AlertSeverity = ""
+	AlertSeverityInfo      AlertSeverity = "info"
+	AlertSeverityWarning   AlertSeverity = "warning"
+	AlertSeverityError     AlertSeverity = "error"
+	AlertSeverityCritical  AlertSeverity = "critical"
 )
 
 // Weight returns a number weighing the gravity of the alert for ordering.
@@ -108,6 +113,8 @@ func (as AlertSeverity) Weight() int {
 		return 2
 	case AlertSeverityError:
 		return 3
+	case AlertSeverityCritical:
+		return 4
 	default:
 		return 0
 	}
@@ -126,11 +133,18 @@ type AlertingModule interface {
 
 // NewAlertMgr returns a new alert manager.
 func NewAlertMgr(mgr *Manager) *AlertMgr {
-	return &AlertMgr{
+	alertMgr := &AlertMgr{
 		alerts:      make(map[string]*Alert),
 		alertEvents: NewEventMgr[AlertUpdate]("alert update", mgr),
 		mgr:         mgr,
 	}
+
+	// Set self as default worker error alert manager of manager, if not already set.
+	if mgr != nil && mgr.GetWorkerErrorMgr() == nil {
+		mgr.SetWorkerErrorMgr(alertMgr)
+	}
+
+	return alertMgr
 }
 
 // NewAlertMgr returns a new alert manager.
