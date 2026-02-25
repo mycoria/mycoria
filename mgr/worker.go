@@ -265,6 +265,31 @@ func (m *Manager) Do(name string, fn func(w *WorkerCtx) error) error {
 				"err", err,
 			)
 		}
+
+		// Report error as alert.
+		alertMgr := m.GetWorkerErrorMgr()
+		if alertMgr != nil {
+			if panicInfo != "" || strings.Contains(err.Error(), "panic") {
+				alertMgr.Report(Alert{
+					ID:            fmt.Sprintf("worker-panic: %s", name),
+					Name:          "Worker Panic: " + name,
+					Message:       fmt.Sprintf("Worker %s panicked: %v", name, err),
+					Severity:      AlertSeverityCritical,
+					ReportedAt:    time.Now(),
+					AlertDataType: "text",
+					AlertData:     panicInfo,
+				})
+			} else {
+				alertMgr.Report(Alert{
+					ID:         fmt.Sprintf("worker-error: %s", name),
+					Name:       "Worker Error: " + name,
+					Message:    fmt.Sprintf("Worker %s failed: %v", name, err),
+					Severity:   AlertSeverityError,
+					ReportedAt: time.Now(),
+				})
+			}
+		}
+
 		return err
 	}
 }
