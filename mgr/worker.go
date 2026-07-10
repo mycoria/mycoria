@@ -79,38 +79,63 @@ func (w *WorkerCtx) LogEnabled(level slog.Level) bool {
 
 // Debug logs at LevelDebug.
 // The worker context is automatically supplied.
-func (w *WorkerCtx) Debug(msg string, args ...any) {
-	w.logger.DebugContext(w.ctx, msg, args...)
-}
+func (w *WorkerCtx) Debug(msg string, args ...any) { w.log(slog.LevelDebug, msg, args...) }
 
 // Info logs at LevelInfo.
 // The worker context is automatically supplied.
-func (w *WorkerCtx) Info(msg string, args ...any) {
-	w.logger.InfoContext(w.ctx, msg, args...)
-}
+func (w *WorkerCtx) Info(msg string, args ...any) { w.log(slog.LevelInfo, msg, args...) }
 
 // Warn logs at LevelWarn.
 // The worker context is automatically supplied.
-func (w *WorkerCtx) Warn(msg string, args ...any) {
-	w.logger.WarnContext(w.ctx, msg, args...)
-}
+func (w *WorkerCtx) Warn(msg string, args ...any) { w.log(slog.LevelWarn, msg, args...) }
 
 // Error logs at LevelError.
 // The worker context is automatically supplied.
-func (w *WorkerCtx) Error(msg string, args ...any) {
-	w.logger.ErrorContext(w.ctx, msg, args...)
-}
+func (w *WorkerCtx) Error(msg string, args ...any) { w.log(slog.LevelError, msg, args...) }
 
 // Log emits a log record with the current time and the given level and message.
 // The worker context is automatically supplied.
-func (w *WorkerCtx) Log(level slog.Level, msg string, args ...any) {
-	w.logger.Log(w.ctx, level, msg, args...)
-}
+func (w *WorkerCtx) Log(level slog.Level, msg string, args ...any) { w.log(level, msg, args...) }
 
 // LogAttrs is a more efficient version of Log() that accepts only Attrs.
 // The worker context is automatically supplied.
 func (w *WorkerCtx) LogAttrs(level slog.Level, msg string, attrs ...slog.Attr) {
-	w.logger.LogAttrs(w.ctx, level, msg, attrs...)
+	w.logAttrs(level, msg, attrs...)
+}
+
+// log builds the record so source= points at the caller of the exported method
+// rather than at this wrapper. Mirrors slog.Logger.log minus its fixed skip.
+func (w *WorkerCtx) log(level slog.Level, msg string, args ...any) {
+	if !w.logger.Enabled(w.ctx, level) {
+		return
+	}
+	r := slog.NewRecord(time.Now(), level, msg, callerPC(4))
+	r.Add(args...)
+	_ = w.logger.Handler().Handle(w.ctx, r)
+}
+
+func (w *WorkerCtx) logAttrs(level slog.Level, msg string, attrs ...slog.Attr) {
+	if !w.logger.Enabled(w.ctx, level) {
+		return
+	}
+	r := slog.NewRecord(time.Now(), level, msg, callerPC(4))
+	r.AddAttrs(attrs...)
+	_ = w.logger.Handler().Handle(w.ctx, r)
+}
+
+// LogAttrsAt logs at the given level with source taken from pc (e.g. a value from
+// runtime.Callers), for helpers logging on behalf of a caller further up the stack.
+// A nil ctx uses the worker context.
+func (w *WorkerCtx) LogAttrsAt(ctx context.Context, pc uintptr, level slog.Level, msg string, attrs ...slog.Attr) {
+	if ctx == nil {
+		ctx = w.ctx
+	}
+	if !w.logger.Enabled(ctx, level) {
+		return
+	}
+	r := slog.NewRecord(time.Now(), level, msg, pc)
+	r.AddAttrs(attrs...)
+	_ = w.logger.Handler().Handle(ctx, r)
 }
 
 // Go starts the given function in a goroutine (as a "worker").

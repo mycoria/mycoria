@@ -84,38 +84,63 @@ func (m *Manager) LogEnabled(level slog.Level) bool {
 
 // Debug logs at LevelDebug.
 // The manager context is automatically supplied.
-func (m *Manager) Debug(msg string, args ...any) {
-	m.logger.DebugContext(m.ctx, msg, args...)
-}
+func (m *Manager) Debug(msg string, args ...any) { m.log(slog.LevelDebug, msg, args...) }
 
 // Info logs at LevelInfo.
 // The manager context is automatically supplied.
-func (m *Manager) Info(msg string, args ...any) {
-	m.logger.InfoContext(m.ctx, msg, args...)
-}
+func (m *Manager) Info(msg string, args ...any) { m.log(slog.LevelInfo, msg, args...) }
 
 // Warn logs at LevelWarn.
 // The manager context is automatically supplied.
-func (m *Manager) Warn(msg string, args ...any) {
-	m.logger.WarnContext(m.ctx, msg, args...)
-}
+func (m *Manager) Warn(msg string, args ...any) { m.log(slog.LevelWarn, msg, args...) }
 
 // Error logs at LevelError.
 // The manager context is automatically supplied.
-func (m *Manager) Error(msg string, args ...any) {
-	m.logger.ErrorContext(m.ctx, msg, args...)
-}
+func (m *Manager) Error(msg string, args ...any) { m.log(slog.LevelError, msg, args...) }
 
 // Log emits a log record with the current time and the given level and message.
 // The manager context is automatically supplied.
-func (m *Manager) Log(level slog.Level, msg string, args ...any) {
-	m.logger.Log(m.ctx, level, msg, args...)
-}
+func (m *Manager) Log(level slog.Level, msg string, args ...any) { m.log(level, msg, args...) }
 
 // LogAttrs is a more efficient version of Log() that accepts only Attrs.
 // The manager context is automatically supplied.
 func (m *Manager) LogAttrs(level slog.Level, msg string, attrs ...slog.Attr) {
-	m.logger.LogAttrs(m.ctx, level, msg, attrs...)
+	m.logAttrs(level, msg, attrs...)
+}
+
+// log builds the record so source= points at the caller of the exported method
+// rather than at this wrapper. Mirrors slog.Logger.log minus its fixed skip.
+func (m *Manager) log(level slog.Level, msg string, args ...any) {
+	if !m.logger.Enabled(m.ctx, level) {
+		return
+	}
+	r := slog.NewRecord(time.Now(), level, msg, callerPC(4))
+	r.Add(args...)
+	_ = m.logger.Handler().Handle(m.ctx, r)
+}
+
+func (m *Manager) logAttrs(level slog.Level, msg string, attrs ...slog.Attr) {
+	if !m.logger.Enabled(m.ctx, level) {
+		return
+	}
+	r := slog.NewRecord(time.Now(), level, msg, callerPC(4))
+	r.AddAttrs(attrs...)
+	_ = m.logger.Handler().Handle(m.ctx, r)
+}
+
+// LogAttrsAt logs at the given level with source taken from pc (e.g. a value from
+// runtime.Callers), for helpers logging on behalf of a caller further up the stack.
+// A nil ctx uses the manager context.
+func (m *Manager) LogAttrsAt(ctx context.Context, pc uintptr, level slog.Level, msg string, attrs ...slog.Attr) {
+	if ctx == nil {
+		ctx = m.ctx
+	}
+	if !m.logger.Enabled(ctx, level) {
+		return
+	}
+	r := slog.NewRecord(time.Now(), level, msg, pc)
+	r.AddAttrs(attrs...)
+	_ = m.logger.Handler().Handle(ctx, r)
 }
 
 // WaitForWorkers waits for all workers of this manager to be done.
