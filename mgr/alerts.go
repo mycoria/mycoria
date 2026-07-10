@@ -2,6 +2,7 @@ package mgr
 
 import (
 	"maps"
+	"reflect"
 	"slices"
 	"sync"
 	"time"
@@ -68,6 +69,10 @@ func (a *Alert) Equals(b *Alert) bool {
 	case !a.CheckedAt.Equal(b.CheckedAt):
 		return false
 	case !a.ResolvedAt.Equal(b.ResolvedAt):
+		return false
+	case a.AlertDataType != b.AlertDataType:
+		return false
+	case !reflect.DeepEqual(a.AlertData, b.AlertData):
 		return false
 	default:
 		return true

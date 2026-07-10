@@ -13,7 +13,13 @@ import (
 
 // FindPanicsInPackages configures a list of package names (or anything in the
 // package path) that will be matched in order to find the source of a panic.
-var FindPanicsInPackages = []string{}
+// It is read without synchronization while handling a panic, so it must be set
+// once during initialization and not mutated afterwards.
+var FindPanicsInPackages []string
+
+// ErrWorkerPanic wraps every error produced by a recovered worker panic, so a
+// panic can be identified with errors.Is regardless of the panic value's text.
+var ErrWorkerPanic = errors.New("panic")
 
 // workerContextKey is a key used for the context key/value storage.
 type workerContextKey struct{}
@@ -217,28 +223,7 @@ func (m *Manager) manageWorker(name string, fn func(w *WorkerCtx) error) {
 			}
 
 			// Report error as alert.
-			alertMgr := m.GetWorkerErrorMgr()
-			if alertMgr != nil {
-				if panicInfo != "" || strings.Contains(err.Error(), "panic") {
-					alertMgr.Report(Alert{
-						ID:            fmt.Sprintf("worker-panic: %s", name),
-						Name:          "Worker Panic: " + name,
-						Message:       fmt.Sprintf("Worker %s panicked: %v", name, err),
-						Severity:      AlertSeverityCritical,
-						ReportedAt:    time.Now(),
-						AlertDataType: "text",
-						AlertData:     panicInfo,
-					})
-				} else {
-					alertMgr.Report(Alert{
-						ID:         fmt.Sprintf("worker-error: %s", name),
-						Name:       "Worker Error: " + name,
-						Message:    fmt.Sprintf("Worker %s failed: %v", name, err),
-						Severity:   AlertSeverityError,
-						ReportedAt: time.Now(),
-					})
-				}
-			}
+			m.reportWorkerError(name, panicInfo, err)
 
 			select {
 			case <-time.After(backoff):
@@ -292,30 +277,41 @@ func (m *Manager) Do(name string, fn func(w *WorkerCtx) error) error {
 		}
 
 		// Report error as alert.
-		alertMgr := m.GetWorkerErrorMgr()
-		if alertMgr != nil {
-			if panicInfo != "" || strings.Contains(err.Error(), "panic") {
-				alertMgr.Report(Alert{
-					ID:            fmt.Sprintf("worker-panic: %s", name),
-					Name:          "Worker Panic: " + name,
-					Message:       fmt.Sprintf("Worker %s panicked: %v", name, err),
-					Severity:      AlertSeverityCritical,
-					ReportedAt:    time.Now(),
-					AlertDataType: "text",
-					AlertData:     panicInfo,
-				})
-			} else {
-				alertMgr.Report(Alert{
-					ID:         fmt.Sprintf("worker-error: %s", name),
-					Name:       "Worker Error: " + name,
-					Message:    fmt.Sprintf("Worker %s failed: %v", name, err),
-					Severity:   AlertSeverityError,
-					ReportedAt: time.Now(),
-				})
-			}
-		}
+		m.reportWorkerError(name, panicInfo, err)
 
 		return err
+	}
+}
+
+// reportWorkerError reports a failed or panicked worker to the configured worker
+// error alert manager, if one is set. A non-empty panicInfo (or an err that looks
+// like a recovered panic) is reported as a critical panic alert; anything else as
+// an error alert. Alerts are keyed by worker name, so repeated failures of the same
+// worker update a single alert rather than accumulating.
+func (m *Manager) reportWorkerError(name, panicInfo string, err error) {
+	alertMgr := m.GetWorkerErrorMgr()
+	if alertMgr == nil {
+		return
+	}
+
+	if errors.Is(err, ErrWorkerPanic) {
+		alertMgr.Report(Alert{
+			ID:            fmt.Sprintf("worker-panic: %s", name),
+			Name:          "Worker Panic: " + name,
+			Message:       fmt.Sprintf("Worker %s panicked: %v", name, err),
+			Severity:      AlertSeverityCritical,
+			ReportedAt:    time.Now(),
+			AlertDataType: "text",
+			AlertData:     panicInfo,
+		})
+	} else {
+		alertMgr.Report(Alert{
+			ID:         fmt.Sprintf("worker-error: %s", name),
+			Name:       "Worker Error: " + name,
+			Message:    fmt.Sprintf("Worker %s failed: %v", name, err),
+			Severity:   AlertSeverityError,
+			ReportedAt: time.Now(),
+		})
 	}
 }
 
@@ -328,7 +324,7 @@ func (m *Manager) runWorker(w *WorkerCtx, fn func(w *WorkerCtx) error) (panicInf
 	defer func() {
 		panicVal := recover()
 		if panicVal != nil {
-			err = fmt.Errorf("panic: %s", panicVal)
+			err = fmt.Errorf("%w: %s", ErrWorkerPanic, panicVal)
 
 			// Print panic to stderr.
 			stackTrace := string(debug.Stack())
@@ -342,6 +338,7 @@ func (m *Manager) runWorker(w *WorkerCtx, fn func(w *WorkerCtx) error) (panicInf
 			// Find the line in the stack trace that refers to where the panic occurred.
 			stackLines := strings.Split(stackTrace, "\n")
 			foundPanic := false
+		findPanicSource:
 			for i, line := range stackLines {
 				if !foundPanic {
 					if strings.Contains(line, "panic(") {
@@ -356,8 +353,10 @@ func (m *Manager) runWorker(w *WorkerCtx, fn func(w *WorkerCtx) error) (panicInf
 					} else if len(FindPanicsInPackages) > 0 {
 						for _, pkg := range FindPanicsInPackages {
 							if strings.Contains(line, pkg) {
-								panicInfo = strings.SplitN(strings.TrimSpace(stackLines[i+1]), " ", 2)[0]
-								break
+								if i+1 < len(stackLines) {
+									panicInfo = strings.SplitN(strings.TrimSpace(stackLines[i+1]), " ", 2)[0]
+								}
+								break findPanicSource
 							}
 						}
 					}
