@@ -284,10 +284,12 @@ func (m *Manager) Do(name string, fn func(w *WorkerCtx) error) error {
 }
 
 // reportWorkerError reports a failed or panicked worker to the configured worker
-// error alert manager, if one is set. A non-empty panicInfo (or an err that looks
-// like a recovered panic) is reported as a critical panic alert; anything else as
-// an error alert. Alerts are keyed by worker name, so repeated failures of the same
-// worker update a single alert rather than accumulating.
+// error alert manager, if one is set. Panics are identified via
+// errors.Is(err, ErrWorkerPanic) and reported as critical panic alerts, with
+// panicInfo (the extracted panic source, which may be empty if none was found)
+// attached as the alert data; all other errors are reported as error alerts.
+// Alerts are keyed by worker name, so repeated failures of the same worker update
+// a single alert rather than accumulating.
 func (m *Manager) reportWorkerError(name, panicInfo string, err error) {
 	alertMgr := m.GetWorkerErrorMgr()
 	if alertMgr == nil {
