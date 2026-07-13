@@ -115,7 +115,7 @@ func (w *WorkerCtx) log(level slog.Level, msg string, args ...any) {
 	if !w.logger.Enabled(w.ctx, level) {
 		return
 	}
-	r := slog.NewRecord(time.Now(), level, msg, callerPC(4))
+	r := slog.NewRecord(time.Now(), level, msg, callerPC())
 	r.Add(args...)
 	_ = w.logger.Handler().Handle(w.ctx, r)
 }
@@ -124,7 +124,7 @@ func (w *WorkerCtx) logAttrs(level slog.Level, msg string, attrs ...slog.Attr) {
 	if !w.logger.Enabled(w.ctx, level) {
 		return
 	}
-	r := slog.NewRecord(time.Now(), level, msg, callerPC(4))
+	r := slog.NewRecord(time.Now(), level, msg, callerPC())
 	r.AddAttrs(attrs...)
 	_ = w.logger.Handler().Handle(w.ctx, r)
 }
@@ -300,7 +300,7 @@ func (m *Manager) reportWorkerError(name, panicInfo string, err error) {
 
 	if errors.Is(err, ErrWorkerPanic) {
 		alertMgr.Report(Alert{
-			ID:            fmt.Sprintf("worker-panic: %s", name),
+			ID:            "worker-panic: " + name,
 			Name:          "Worker Panic: " + name,
 			Message:       fmt.Sprintf("Worker %s panicked: %v", name, err),
 			Severity:      AlertSeverityCritical,
@@ -310,7 +310,7 @@ func (m *Manager) reportWorkerError(name, panicInfo string, err error) {
 		})
 	} else {
 		alertMgr.Report(Alert{
-			ID:         fmt.Sprintf("worker-error: %s", name),
+			ID:         "worker-error: " + name,
 			Name:       "Worker Error: " + name,
 			Message:    fmt.Sprintf("Worker %s failed: %v", name, err),
 			Severity:   AlertSeverityError,
@@ -328,7 +328,13 @@ func (m *Manager) runWorker(w *WorkerCtx, fn func(w *WorkerCtx) error) (panicInf
 	defer func() {
 		panicVal := recover()
 		if panicVal != nil {
-			err = fmt.Errorf("%w: %v", ErrWorkerPanic, panicVal)
+			// Preserve the original error in the chain (errors.Is/As) when the
+			// panic value is itself an error; otherwise format it as a value.
+			if panicErr, ok := panicVal.(error); ok {
+				err = fmt.Errorf("%w: %w", ErrWorkerPanic, panicErr)
+			} else {
+				err = fmt.Errorf("%w: %v", ErrWorkerPanic, panicVal)
+			}
 
 			// Print panic to stderr.
 			stackTrace := string(debug.Stack())

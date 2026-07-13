@@ -19,22 +19,22 @@ func (h *sourceCaptureHandler) WithAttrs([]slog.Attr) slog.Handler            { 
 func (h *sourceCaptureHandler) WithGroup(string) slog.Handler                 { return h }
 
 // captureSource installs a capturing default logger, runs emit, and returns the
-// resolved source location of the (single) record emitted. The manager must be
+// resolved source file of the (single) record emitted. The manager must be
 // constructed inside emit so its logger picks up the capture handler.
-func captureSource(t *testing.T, emit func()) (file string, line int) {
+func captureSource(t *testing.T, emit func()) (file string) {
 	t.Helper()
 	h := &sourceCaptureHandler{fn: func(r slog.Record) {
 		f, _ := runtime.CallersFrames([]uintptr{r.PC}).Next()
-		file, line = f.File, f.Line
+		file = f.File
 	}}
 	defer func(old *slog.Logger) { slog.SetDefault(old) }(slog.Default())
 	slog.SetDefault(slog.New(h))
 	emit()
-	return file, line
+	return file
 }
 
 func TestManagerLogSource(t *testing.T) {
-	file, _ := captureSource(t, func() {
+	file := captureSource(t, func() {
 		m := New("test")
 		m.Error("boom")
 	})
@@ -44,7 +44,7 @@ func TestManagerLogSource(t *testing.T) {
 }
 
 func TestWorkerCtxLogSource(t *testing.T) {
-	file, _ := captureSource(t, func() {
+	file := captureSource(t, func() {
 		m := New("test")
 		_ = m.Do("t", func(w *WorkerCtx) error { w.Error("boom"); return nil })
 	})

@@ -114,7 +114,7 @@ func (m *Manager) log(level slog.Level, msg string, args ...any) {
 	if !m.logger.Enabled(m.ctx, level) {
 		return
 	}
-	r := slog.NewRecord(time.Now(), level, msg, callerPC(4))
+	r := slog.NewRecord(time.Now(), level, msg, callerPC())
 	r.Add(args...)
 	_ = m.logger.Handler().Handle(m.ctx, r)
 }
@@ -123,7 +123,7 @@ func (m *Manager) logAttrs(level slog.Level, msg string, attrs ...slog.Attr) {
 	if !m.logger.Enabled(m.ctx, level) {
 		return
 	}
-	r := slog.NewRecord(time.Now(), level, msg, callerPC(4))
+	r := slog.NewRecord(time.Now(), level, msg, callerPC())
 	r.AddAttrs(attrs...)
 	_ = m.logger.Handler().Handle(m.ctx, r)
 }
