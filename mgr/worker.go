@@ -13,7 +13,13 @@ import (
 
 // FindPanicsInPackages configures a list of package names (or anything in the
 // package path) that will be matched in order to find the source of a panic.
-var FindPanicsInPackages = []string{}
+// It is read without synchronization while handling a panic, so it must be set
+// once during initialization and not mutated afterwards.
+var FindPanicsInPackages []string
+
+// ErrWorkerPanic wraps every error produced by a recovered worker panic, so a
+// panic can be identified with errors.Is regardless of the panic value's text.
+var ErrWorkerPanic = errors.New("panic")
 
 // workerContextKey is a key used for the context key/value storage.
 type workerContextKey struct{}
@@ -79,38 +85,63 @@ func (w *WorkerCtx) LogEnabled(level slog.Level) bool {
 
 // Debug logs at LevelDebug.
 // The worker context is automatically supplied.
-func (w *WorkerCtx) Debug(msg string, args ...any) {
-	w.logger.DebugContext(w.ctx, msg, args...)
-}
+func (w *WorkerCtx) Debug(msg string, args ...any) { w.log(slog.LevelDebug, msg, args...) }
 
 // Info logs at LevelInfo.
 // The worker context is automatically supplied.
-func (w *WorkerCtx) Info(msg string, args ...any) {
-	w.logger.InfoContext(w.ctx, msg, args...)
-}
+func (w *WorkerCtx) Info(msg string, args ...any) { w.log(slog.LevelInfo, msg, args...) }
 
 // Warn logs at LevelWarn.
 // The worker context is automatically supplied.
-func (w *WorkerCtx) Warn(msg string, args ...any) {
-	w.logger.WarnContext(w.ctx, msg, args...)
-}
+func (w *WorkerCtx) Warn(msg string, args ...any) { w.log(slog.LevelWarn, msg, args...) }
 
 // Error logs at LevelError.
 // The worker context is automatically supplied.
-func (w *WorkerCtx) Error(msg string, args ...any) {
-	w.logger.ErrorContext(w.ctx, msg, args...)
-}
+func (w *WorkerCtx) Error(msg string, args ...any) { w.log(slog.LevelError, msg, args...) }
 
 // Log emits a log record with the current time and the given level and message.
 // The worker context is automatically supplied.
-func (w *WorkerCtx) Log(level slog.Level, msg string, args ...any) {
-	w.logger.Log(w.ctx, level, msg, args...)
-}
+func (w *WorkerCtx) Log(level slog.Level, msg string, args ...any) { w.log(level, msg, args...) }
 
 // LogAttrs is a more efficient version of Log() that accepts only Attrs.
 // The worker context is automatically supplied.
 func (w *WorkerCtx) LogAttrs(level slog.Level, msg string, attrs ...slog.Attr) {
-	w.logger.LogAttrs(w.ctx, level, msg, attrs...)
+	w.logAttrs(level, msg, attrs...)
+}
+
+// log builds the record so source= points at the caller of the exported method
+// rather than at this wrapper. Mirrors slog.Logger.log minus its fixed skip.
+func (w *WorkerCtx) log(level slog.Level, msg string, args ...any) {
+	if !w.logger.Enabled(w.ctx, level) {
+		return
+	}
+	r := slog.NewRecord(time.Now(), level, msg, callerPC())
+	r.Add(args...)
+	_ = w.logger.Handler().Handle(w.ctx, r)
+}
+
+func (w *WorkerCtx) logAttrs(level slog.Level, msg string, attrs ...slog.Attr) {
+	if !w.logger.Enabled(w.ctx, level) {
+		return
+	}
+	r := slog.NewRecord(time.Now(), level, msg, callerPC())
+	r.AddAttrs(attrs...)
+	_ = w.logger.Handler().Handle(w.ctx, r)
+}
+
+// LogAttrsAt logs at the given level with source taken from pc (e.g. a value from
+// runtime.Callers), for helpers logging on behalf of a caller further up the stack.
+// A nil ctx uses the worker context.
+func (w *WorkerCtx) LogAttrsAt(ctx context.Context, pc uintptr, level slog.Level, msg string, attrs ...slog.Attr) {
+	if ctx == nil {
+		ctx = w.ctx
+	}
+	if !w.logger.Enabled(ctx, level) {
+		return
+	}
+	r := slog.NewRecord(time.Now(), level, msg, pc)
+	r.AddAttrs(attrs...)
+	_ = w.logger.Handler().Handle(ctx, r)
 }
 
 // Go starts the given function in a goroutine (as a "worker").
@@ -142,8 +173,10 @@ func (m *Manager) manageWorker(name string, fn func(w *WorkerCtx) error) {
 			// No error means that the worker is finished.
 			return
 
-		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-			// A canceled context or dexceeded eadline also means that the worker is finished.
+		case !errors.Is(err, ErrWorkerPanic) &&
+			(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)):
+			// A canceled context or exceeded deadline (that isn't a panic) also means
+			// that the worker is finished.
 			return
 
 		default:
@@ -192,28 +225,7 @@ func (m *Manager) manageWorker(name string, fn func(w *WorkerCtx) error) {
 			}
 
 			// Report error as alert.
-			alertMgr := m.GetWorkerErrorMgr()
-			if alertMgr != nil {
-				if panicInfo != "" || strings.Contains(err.Error(), "panic") {
-					alertMgr.Report(Alert{
-						ID:            fmt.Sprintf("worker-panic: %s", name),
-						Name:          "Worker Panic: " + name,
-						Message:       fmt.Sprintf("Worker %s panicked: %v", name, err),
-						Severity:      AlertSeverityCritical,
-						ReportedAt:    time.Now(),
-						AlertDataType: "text",
-						AlertData:     panicInfo,
-					})
-				} else {
-					alertMgr.Report(Alert{
-						ID:         fmt.Sprintf("worker-error: %s", name),
-						Name:       "Worker Error: " + name,
-						Message:    fmt.Sprintf("Worker %s failed: %v", name, err),
-						Severity:   AlertSeverityError,
-						ReportedAt: time.Now(),
-					})
-				}
-			}
+			m.reportWorkerError(name, panicInfo, err)
 
 			select {
 			case <-time.After(backoff):
@@ -247,8 +259,10 @@ func (m *Manager) Do(name string, fn func(w *WorkerCtx) error) error {
 		// No error means that the worker is finished.
 		return nil
 
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		// A canceled context or dexceeded eadline also means that the worker is finished.
+	case !errors.Is(err, ErrWorkerPanic) &&
+		(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)):
+		// A canceled context or exceeded deadline (that isn't a panic) also means
+		// that the worker is finished.
 		return err
 
 	default:
@@ -267,30 +281,45 @@ func (m *Manager) Do(name string, fn func(w *WorkerCtx) error) error {
 		}
 
 		// Report error as alert.
-		alertMgr := m.GetWorkerErrorMgr()
-		if alertMgr != nil {
-			if panicInfo != "" || strings.Contains(err.Error(), "panic") {
-				alertMgr.Report(Alert{
-					ID:            fmt.Sprintf("worker-panic: %s", name),
-					Name:          "Worker Panic: " + name,
-					Message:       fmt.Sprintf("Worker %s panicked: %v", name, err),
-					Severity:      AlertSeverityCritical,
-					ReportedAt:    time.Now(),
-					AlertDataType: "text",
-					AlertData:     panicInfo,
-				})
-			} else {
-				alertMgr.Report(Alert{
-					ID:         fmt.Sprintf("worker-error: %s", name),
-					Name:       "Worker Error: " + name,
-					Message:    fmt.Sprintf("Worker %s failed: %v", name, err),
-					Severity:   AlertSeverityError,
-					ReportedAt: time.Now(),
-				})
-			}
-		}
+		m.reportWorkerError(name, panicInfo, err)
 
 		return err
+	}
+}
+
+// reportWorkerError reports a failed or panicked worker to the configured worker
+// error alert manager, if one is set. Panics are identified via
+// errors.Is(err, ErrWorkerPanic) and reported as critical panic alerts, with
+// panicInfo (the extracted panic source, which may be empty if none was found)
+// attached as the alert data; all other errors are reported as error alerts.
+// Alerts are keyed by error kind and worker name ("worker-panic: <name>" or
+// "worker-error: <name>"), so repeated failures of the same kind update a single
+// alert rather than accumulating; a worker that both panics and errors produces
+// two distinct alerts.
+func (m *Manager) reportWorkerError(name, panicInfo string, err error) {
+	alertMgr := m.GetWorkerErrorMgr()
+	if alertMgr == nil {
+		return
+	}
+
+	if errors.Is(err, ErrWorkerPanic) {
+		alertMgr.Report(Alert{
+			ID:            "worker-panic: " + name,
+			Name:          "Worker Panic: " + name,
+			Message:       fmt.Sprintf("Worker %s panicked: %v", name, err),
+			Severity:      AlertSeverityCritical,
+			ReportedAt:    time.Now(),
+			AlertDataType: "text",
+			AlertData:     panicInfo,
+		})
+	} else {
+		alertMgr.Report(Alert{
+			ID:         "worker-error: " + name,
+			Name:       "Worker Error: " + name,
+			Message:    fmt.Sprintf("Worker %s failed: %v", name, err),
+			Severity:   AlertSeverityError,
+			ReportedAt: time.Now(),
+		})
 	}
 }
 
@@ -303,13 +332,19 @@ func (m *Manager) runWorker(w *WorkerCtx, fn func(w *WorkerCtx) error) (panicInf
 	defer func() {
 		panicVal := recover()
 		if panicVal != nil {
-			err = fmt.Errorf("panic: %s", panicVal)
+			// Preserve the original error in the chain (errors.Is/As) when the
+			// panic value is itself an error; otherwise format it as a value.
+			if panicErr, ok := panicVal.(error); ok {
+				err = fmt.Errorf("%w: %w", ErrWorkerPanic, panicErr)
+			} else {
+				err = fmt.Errorf("%w: %v", ErrWorkerPanic, panicVal)
+			}
 
 			// Print panic to stderr.
 			stackTrace := string(debug.Stack())
 			fmt.Fprintf(
 				os.Stderr,
-				"===== PANIC =====\n%s\n\n%s=====  END  =====\n",
+				"===== PANIC =====\n%v\n\n%s=====  END  =====\n",
 				panicVal,
 				stackTrace,
 			)
@@ -317,6 +352,7 @@ func (m *Manager) runWorker(w *WorkerCtx, fn func(w *WorkerCtx) error) (panicInf
 			// Find the line in the stack trace that refers to where the panic occurred.
 			stackLines := strings.Split(stackTrace, "\n")
 			foundPanic := false
+		findPanicSource:
 			for i, line := range stackLines {
 				if !foundPanic {
 					if strings.Contains(line, "panic(") {
@@ -331,8 +367,10 @@ func (m *Manager) runWorker(w *WorkerCtx, fn func(w *WorkerCtx) error) (panicInf
 					} else if len(FindPanicsInPackages) > 0 {
 						for _, pkg := range FindPanicsInPackages {
 							if strings.Contains(line, pkg) {
-								panicInfo = strings.SplitN(strings.TrimSpace(stackLines[i+1]), " ", 2)[0]
-								break
+								if i+1 < len(stackLines) {
+									panicInfo = strings.SplitN(strings.TrimSpace(stackLines[i+1]), " ", 2)[0]
+								}
+								break findPanicSource
 							}
 						}
 					}

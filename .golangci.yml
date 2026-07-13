@@ -1,28 +1,25 @@
-# Docs:
-# https://golangci-lint.run/usage/linters/
-
+version: "2"
 linters:
-  enable-all: true
+  default: all
   disable:
     - containedctx
     - contextcheck
     - cyclop
     - depguard
-    - exhaustivestruct
+    - err113
     - exhaustruct
     - forbidigo
+    - funcorder
     - funlen
     - gochecknoglobals
     - gochecknoinits
     - gocognit
     - gocyclo
-    - goerr113 
-    - gomnd
-    - ifshort
+    - gomodguard
     - interfacebloat
-    - interfacer
     - ireturn
     - lll
+    - mnd
     - musttag
     - nestif
     - nilnil
@@ -30,7 +27,7 @@ linters:
     - noctx
     - nolintlint
     - nonamedreturns
-    - nosnakecase
+    - paralleltest
     - revive
     - tagliatelle
     - testifylint
@@ -39,35 +36,46 @@ linters:
     - whitespace
     - wrapcheck
     - wsl
-
-linters-settings:
-  revive:
-    # See https://github.com/mgechev/revive#available-rules for details.
-    enable-all-rules: true
-  gci:
-    # put imports beginning with prefix after 3rd-party packages;
-    # only support one prefix
-    # if not set, use goimports.local-prefixes
-    local-prefixes: github.com/mycoria
-  godox:
-    # report any comments starting with keywords, this is useful for TODO or FIXME comments that
-    # might be left in the code accidentally and should be resolved before merging
-    keywords:
-      - FIXME
-  gosec:
-    # To specify a set of rules to explicitly exclude.
-    # Available rules: https://github.com/securego/gosec#available-rules
-    excludes:
-      - G204 # Variables in commands.
-      - G304 # Variables in file paths.
-      - G505 # We need crypto/sha1 for non-security stuff. Using `nolint:` triggers another linter.
-
-issues:
-  exclude-use-default: false
-  exclude-rules:
-    - text: "a blank import .*"
-      linters:
-        - golint
-    - text: "ST1000: at least one file in a package should have a package comment.*"
-      linters:
-        - stylecheck
+    - wsl_v5
+  settings:
+    godox:
+      keywords:
+        - FIXME
+    gosec:
+      excludes:
+        - G204
+        - G304
+        - G505
+    revive:
+      enable-all-rules: true
+  exclusions:
+    generated: lax
+    rules:
+      - linters:
+          - golint
+        text: a blank import .*
+      - linters:
+          - staticcheck
+        text: 'ST1000: at least one file in a package should have a package comment.*'
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/mycoria)
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

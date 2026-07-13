@@ -2,6 +2,7 @@ package mgr
 
 import (
 	"maps"
+	"reflect"
 	"slices"
 	"sync"
 	"time"
@@ -51,8 +52,8 @@ type Alert struct {
 	AlertData any
 }
 
-// Equals returns whether the two alerts are identical.
-// The alert data is not compared.
+// Equals returns whether the two alerts are identical, including their alert data
+// type and alert data (the latter compared with reflect.DeepEqual).
 func (a *Alert) Equals(b *Alert) bool {
 	switch {
 	case a.ID != b.ID:
@@ -68,6 +69,10 @@ func (a *Alert) Equals(b *Alert) bool {
 	case !a.CheckedAt.Equal(b.CheckedAt):
 		return false
 	case !a.ResolvedAt.Equal(b.ResolvedAt):
+		return false
+	case a.AlertDataType != b.AlertDataType:
+		return false
+	case !reflect.DeepEqual(a.AlertData, b.AlertData):
 		return false
 	default:
 		return true
