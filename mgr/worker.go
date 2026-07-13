@@ -288,8 +288,10 @@ func (m *Manager) Do(name string, fn func(w *WorkerCtx) error) error {
 // errors.Is(err, ErrWorkerPanic) and reported as critical panic alerts, with
 // panicInfo (the extracted panic source, which may be empty if none was found)
 // attached as the alert data; all other errors are reported as error alerts.
-// Alerts are keyed by worker name, so repeated failures of the same worker update
-// a single alert rather than accumulating.
+// Alerts are keyed by error kind and worker name ("worker-panic: <name>" or
+// "worker-error: <name>"), so repeated failures of the same kind update a single
+// alert rather than accumulating; a worker that both panics and errors produces
+// two distinct alerts.
 func (m *Manager) reportWorkerError(name, panicInfo string, err error) {
 	alertMgr := m.GetWorkerErrorMgr()
 	if alertMgr == nil {
@@ -326,13 +328,13 @@ func (m *Manager) runWorker(w *WorkerCtx, fn func(w *WorkerCtx) error) (panicInf
 	defer func() {
 		panicVal := recover()
 		if panicVal != nil {
-			err = fmt.Errorf("%w: %s", ErrWorkerPanic, panicVal)
+			err = fmt.Errorf("%w: %v", ErrWorkerPanic, panicVal)
 
 			// Print panic to stderr.
 			stackTrace := string(debug.Stack())
 			fmt.Fprintf(
 				os.Stderr,
-				"===== PANIC =====\n%s\n\n%s=====  END  =====\n",
+				"===== PANIC =====\n%v\n\n%s=====  END  =====\n",
 				panicVal,
 				stackTrace,
 			)
