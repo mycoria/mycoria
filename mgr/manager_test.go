@@ -2,6 +2,7 @@ package mgr
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"runtime"
 	"strings"
@@ -50,5 +51,32 @@ func TestWorkerCtxLogSource(t *testing.T) {
 	})
 	if !strings.HasSuffix(file, "manager_test.go") {
 		t.Fatalf("source file = %q, want the caller (manager_test.go), not the mgr wrapper", file)
+	}
+}
+
+// TestDoPanicWithContextErrorIsReported ensures a worker that panics with a value
+// that is (or wraps) a context error is still treated as a failure and reported,
+// rather than being misclassified as a normal cancellation. Regression test for the
+// %w panic wrapping interacting with the errors.Is(context.Canceled) checks in Do.
+func TestDoPanicWithContextErrorIsReported(t *testing.T) {
+	m := New("test")
+	alertMgr := NewAlertMgr(m) // auto-registers as the manager's worker error alert manager
+
+	err := m.Do("panicky", func(w *WorkerCtx) error {
+		panic(context.Canceled)
+	})
+
+	if !errors.Is(err, ErrWorkerPanic) {
+		t.Fatalf("err = %v, want it to wrap ErrWorkerPanic", err)
+	}
+	alerts := alertMgr.Export().Alerts
+	if len(alerts) != 1 {
+		t.Fatalf("got %d alerts, want 1 (a panic must be reported, not treated as cancellation)", len(alerts))
+	}
+	if got, want := alerts[0].ID, "worker-panic: panicky"; got != want {
+		t.Errorf("alert ID = %q, want %q", got, want)
+	}
+	if got, want := alerts[0].Severity, AlertSeverityCritical; got != want {
+		t.Errorf("alert severity = %q, want %q", got, want)
 	}
 }

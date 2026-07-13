@@ -173,8 +173,10 @@ func (m *Manager) manageWorker(name string, fn func(w *WorkerCtx) error) {
 			// No error means that the worker is finished.
 			return
 
-		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-			// A canceled context or dexceeded eadline also means that the worker is finished.
+		case !errors.Is(err, ErrWorkerPanic) &&
+			(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)):
+			// A canceled context or exceeded deadline (that isn't a panic) also means
+			// that the worker is finished.
 			return
 
 		default:
@@ -257,8 +259,10 @@ func (m *Manager) Do(name string, fn func(w *WorkerCtx) error) error {
 		// No error means that the worker is finished.
 		return nil
 
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		// A canceled context or dexceeded eadline also means that the worker is finished.
+	case !errors.Is(err, ErrWorkerPanic) &&
+		(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)):
+		// A canceled context or exceeded deadline (that isn't a panic) also means
+		// that the worker is finished.
 		return err
 
 	default:
